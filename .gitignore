@@ -1,0 +1,19 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Secrets
+.env
+config.json
+
+# Generated output
+out/
+IMPLEMENTATION_PLAN.md
+CLAUDE.md
