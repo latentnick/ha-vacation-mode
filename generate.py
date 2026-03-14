@@ -9,11 +9,18 @@ def _sigmoid(x):
 
 
 def _compute_hourly_priors(features_df, entities):
-    """Compute historical on-rate for each light by (hour, is_weekend)."""
-    df = features_df[entities].copy()
-    df['hour'] = features_df.index.hour
-    df['is_weekend'] = features_df.index.dayofweek.isin([5, 6]).astype(int)
-    return df.groupby(['hour', 'is_weekend'])[entities].mean()
+    """Compute historical on-rate for each light by (hour, is_weekend).
+
+    Returns a (24, 2, n_entities) NumPy array for fast lookup in the
+    generation loop.  features_df must already have 'hour' and 'is_weekend'
+    columns (added by build_features).
+    """
+    grouped = features_df.groupby(['hour', 'is_weekend'])[entities].mean()
+    n = len(entities)
+    prior_array = np.zeros((24, 2, n))
+    for (h, w), row in grouped.iterrows():
+        prior_array[h, w] = row.values
+    return prior_array
 
 
 def generate_vacation_schedule(model, start_date, num_days,
@@ -52,7 +59,10 @@ def generate_vacation_schedule(model, start_date, num_days,
         freq='15min'
     )
 
-    hourly_priors = _compute_hourly_priors(features_df, entities)
+    prior_array = _compute_hourly_priors(features_df, entities)
+
+    # Pre-build feature name → index map (avoids repeated list.index() scans)
+    feat_idx = {name: i for i, name in enumerate(input_features)}
 
     # Seed the feature buffer with the last max(sequence_length, 7*96) historical rows
     # so lag features (24h ago, 7d ago) have real data to look back to.
@@ -85,7 +95,7 @@ def generate_vacation_schedule(model, start_date, num_days,
         seq = np.array(feature_buffer[-sequence_length:])
         X_input = seq.reshape(1, sequence_length, len(input_features))
 
-        pred_proba = model.predict(X_input, verbose=0)[0]
+        pred_proba = model(X_input, training=False)[0].numpy()
 
         # Temperature scaling via logit space: <1 = more deterministic, >1 = more random
         pred_proba = np.clip(pred_proba, 0.001, 0.999)
@@ -97,11 +107,7 @@ def generate_vacation_schedule(model, start_date, num_days,
         # lights to get stuck off during generation.
         hour = t.hour
         is_wknd = 1 if t.dayofweek >= 5 else 0
-        prior_key = (hour, is_wknd)
-        if prior_key in hourly_priors.index:
-            prior = hourly_priors.loc[prior_key].values
-        else:
-            prior = scaled_proba  # fallback: no blending
+        prior = prior_array[hour, is_wknd]
         blended_proba = (1 - prior_weight) * scaled_proba + prior_weight * prior
 
         # Sample states directly from blended probabilities
@@ -123,17 +129,17 @@ def generate_vacation_schedule(model, start_date, num_days,
         new_features = np.zeros(len(input_features))
 
         for j, entity in enumerate(entities):
-            new_features[input_features.index(entity)] = current_state[j]
+            new_features[feat_idx[entity]] = current_state[j]
 
-        new_features[input_features.index('hour_sin')] = np.sin(2 * np.pi * t.hour / 24)
-        new_features[input_features.index('hour_cos')] = np.cos(2 * np.pi * t.hour / 24)
-        new_features[input_features.index('day_sin')] = np.sin(2 * np.pi * t.dayofweek / 7)
-        new_features[input_features.index('day_cos')] = np.cos(2 * np.pi * t.dayofweek / 7)
-        new_features[input_features.index('is_weekend')] = 1 if t.dayofweek >= 5 else 0
-        new_features[input_features.index('total_lights_on')] = current_state.sum()
+        new_features[feat_idx['hour_sin']] = np.sin(2 * np.pi * hour / 24)
+        new_features[feat_idx['hour_cos']] = np.cos(2 * np.pi * hour / 24)
+        new_features[feat_idx['day_sin']] = np.sin(2 * np.pi * t.dayofweek / 7)
+        new_features[feat_idx['day_cos']] = np.cos(2 * np.pi * t.dayofweek / 7)
+        new_features[feat_idx['is_weekend']] = is_wknd
+        new_features[feat_idx['total_lights_on']] = current_state.sum()
 
         for j, entity in enumerate(entities):
-            new_features[input_features.index(f'{entity}_time_in_state')] = tis_normalized[j]
+            new_features[feat_idx[f'{entity}_time_in_state']] = tis_normalized[j]
 
         # Lag features: look back 96 steps (24h) and 672 steps (7d) in state_history.
         # state_history[-1] is the state we just appended (current step),
@@ -142,8 +148,8 @@ def generate_vacation_schedule(model, start_date, num_days,
         for j, entity in enumerate(entities):
             lag_24h = state_history[-97][j] if hist_len > 96 else 0
             lag_7d = state_history[-673][j] if hist_len > 672 else 0
-            new_features[input_features.index(f'{entity}_24h_ago')] = lag_24h
-            new_features[input_features.index(f'{entity}_7d_ago')] = lag_7d
+            new_features[feat_idx[f'{entity}_24h_ago']] = lag_24h
+            new_features[feat_idx[f'{entity}_7d_ago']] = lag_7d
 
         feature_buffer.append(new_features)
         generated_states.append(current_state.copy())
