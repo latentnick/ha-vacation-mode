@@ -42,7 +42,7 @@ HA_ENTITIES = json.load(_config_path.open())["entities"]
 ENTITIES    = [e.split(".", 1)[1] for e in HA_ENTITIES]  # InfluxDB names (no domain prefix)
 ENTITY_MAP  = dict(zip(ENTITIES, HA_ENTITIES))            # short name -> full HA entity ID
 
-DAYS_BACK = 90  # 3 months
+DAYS_BACK = 183  # 6 months
 # ---------------------
 
 

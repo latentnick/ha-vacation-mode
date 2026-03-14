@@ -8,14 +8,25 @@ def _sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
 
+def _compute_hourly_priors(features_df, entities):
+    """Compute historical on-rate for each light by (hour, is_weekend)."""
+    df = features_df[entities].copy()
+    df['hour'] = features_df.index.hour
+    df['is_weekend'] = features_df.index.dayofweek.isin([5, 6]).astype(int)
+    return df.groupby(['hour', 'is_weekend'])[entities].mean()
+
+
 def generate_vacation_schedule(model, start_date, num_days,
                                sequence_length, input_features, entities,
-                               features_df, temperature=0.5):
+                               features_df, temperature=0.5,
+                               prior_weight=0.3):
     """
     Generate a vacation schedule by predicting light states directly.
 
     At each 15-min step the model outputs P(light is on) for each light.
-    We sample from that probability to get the new state.
+    The prediction is blended with an hourly prior from historical data to
+    prevent the autoregressive loop from getting stuck in one state.
+    We then sample from the blended probability to get the new state.
 
     The generation is seeded with the last portion of real historical data so
     that time-in-state counters and lag features start from meaningful values.
@@ -29,6 +40,8 @@ def generate_vacation_schedule(model, start_date, num_days,
         entities: List of light entity names (used as output columns)
         features_df: Historical feature DataFrame (for seeding)
         temperature: Controls randomness. <1 = more deterministic, >1 = more random
+        prior_weight: Weight for hourly prior (0-1). Higher values rely more on
+                      historical patterns; lower values rely more on the model.
 
     Returns:
         DataFrame with columns=entities and index=time, containing 0/1 states.
@@ -38,6 +51,8 @@ def generate_vacation_schedule(model, start_date, num_days,
         periods=num_days * 96,
         freq='15min'
     )
+
+    hourly_priors = _compute_hourly_priors(features_df, entities)
 
     # Seed the feature buffer with the last max(sequence_length, 7*96) historical rows
     # so lag features (24h ago, 7d ago) have real data to look back to.
@@ -77,8 +92,20 @@ def generate_vacation_schedule(model, start_date, num_days,
         logits = np.log(pred_proba / (1 - pred_proba))
         scaled_proba = _sigmoid(logits / temperature)
 
-        # Sample states directly from predicted probabilities
-        new_state = (np.random.random(len(scaled_proba)) < scaled_proba).astype(int)
+        # Blend with hourly prior to prevent autoregressive state lock-in.
+        # The model tends to predict "stay in current state" which causes
+        # lights to get stuck off during generation.
+        hour = t.hour
+        is_wknd = 1 if t.dayofweek >= 5 else 0
+        prior_key = (hour, is_wknd)
+        if prior_key in hourly_priors.index:
+            prior = hourly_priors.loc[prior_key].values
+        else:
+            prior = scaled_proba  # fallback: no blending
+        blended_proba = (1 - prior_weight) * scaled_proba + prior_weight * prior
+
+        # Sample states directly from blended probabilities
+        new_state = (np.random.random(len(blended_proba)) < blended_proba).astype(int)
 
         # Update time-in-state counters
         for j in range(len(entities)):
