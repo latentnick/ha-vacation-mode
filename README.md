@@ -88,7 +88,7 @@ uv run jupyter lab out/lights_executed.ipynb
 Then start the daemon (on the machine that will stay home):
 
 ```bash
-nohup uv run vacation_daemon.py out/schedule_events.json > out/vacation_daemon.log 2>&1 &
+./start_vacation_daemon.sh
 ```
 
 Monitor progress:
@@ -100,7 +100,7 @@ tail -f out/vacation_daemon.log
 Stop the daemon early:
 
 ```bash
-kill $(pgrep -f vacation_daemon.py)
+./stop_vacation_daemon.sh
 ```
 
 ## Files
@@ -111,5 +111,7 @@ kill $(pgrep -f vacation_daemon.py)
 | `lights.ipynb` | Trains the LSTM model and generates the vacation schedule |
 | `vacation_daemon.py` | Executes the schedule via the Home Assistant REST API |
 | `run.sh` | Runs fetch + train + generate in one step |
+| `start_vacation_daemon.sh` | Starts the daemon in the background |
+| `stop_vacation_daemon.sh` | Stops the daemon if it is running |
 | `out/schedule_events.json` | Generated on/off events (created by notebook) |
 | `out/lights_executed.ipynb` | Executed notebook with all outputs and charts |
