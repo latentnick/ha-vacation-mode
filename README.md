@@ -74,7 +74,7 @@ cp config.json.example config.json
 Before you leave, run:
 
 ```bash
-./run.sh 2026-04-01 2026-04-08
+./generate_model.sh 2026-04-01 2026-04-08
 ```
 
 This fetches fresh data, retrains the model, and generates `out/schedule_events.json`.
@@ -110,7 +110,7 @@ Stop the daemon early:
 | `fetch_ha_data.py` | Fetches light history from InfluxDB |
 | `lights.ipynb` | Trains the LSTM model and generates the vacation schedule |
 | `vacation_daemon.py` | Executes the schedule via the Home Assistant REST API |
-| `run.sh` | Runs fetch + train + generate in one step |
+| `generate_model.sh` | Runs fetch + train + generate in one step |
 | `start_vacation_daemon.sh` | Starts the daemon in the background |
 | `stop_vacation_daemon.sh` | Stops the daemon if it is running |
 | `out/schedule_events.json` | Generated on/off events (created by notebook) |
