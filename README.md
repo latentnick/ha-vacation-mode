@@ -1,15 +1,16 @@
 # lights
 
-Learns your home's light usage patterns from historical data and generates a realistic on/off schedule to run while you're on vacation — making the house look occupied.
+Generates a realistic on/off schedule for your home's lights while you're on vacation — making the house look occupied.
 
-Uses Home Assistant + InfluxDB for data, an LSTM model for pattern learning, and a daemon that calls the Home Assistant REST API to execute the schedule.
+Uses Home Assistant + InfluxDB for historical data, empirical-day resampling to build the schedule, and a daemon that calls the Home Assistant REST API to execute it.
 
 ## How it works
 
-1. **Fetch data** — pulls 3 months of light state history from InfluxDB
-2. **Train model** — an LSTM learns your daily/weekly light patterns
-3. **Generate schedule** — produces a realistic on/off schedule for your vacation dates
-4. **Run daemon** — executes the schedule by calling the Home Assistant REST API at each event time
+1. **Fetch data** — pulls ~6 months of light state history from InfluxDB
+2. **Generate schedule** — for each block of each vacation day, samples a real historical day (matching day-of-week, weighted toward seasonally close donors) and replays its switch events with small jitter
+3. **Run daemon** — executes the schedule by calling the Home Assistant REST API at each event time
+
+The resampling approach beat an LSTM and a Neural-Hawkes hazard model on realism metrics (hourly on-rate, switch-frequency, KL divergence vs. history) — every generated day is a perturbation of something that actually happened in your home.
 
 ## Prerequisites
 
@@ -27,13 +28,7 @@ cd lights
 uv sync
 ```
 
-**2. Register the Jupyter kernel**
-
-```bash
-uv run python -m ipykernel install --user --name lights --display-name "lights"
-```
-
-**3. Configure credentials**
+**2. Configure credentials**
 
 Copy `.env.example` to `.env` and fill in your values:
 
@@ -55,7 +50,7 @@ Get a Long-Lived Access Token from Home Assistant: **Profile → Security → Lo
 
 Get InfluxDB credentials from Home Assistant: **Settings → Add-ons → InfluxDB → Open Web UI → InfluxDB Admin → Users**.
 
-**4. Configure your light entities**
+**3. Configure your light entities**
 
 Run the interactive configuration script, which queries Home Assistant and lets you choose which lights to include:
 
@@ -77,13 +72,7 @@ Before you leave, run:
 ./generate_model.sh 2026-04-01 2026-04-08
 ```
 
-This fetches fresh data, retrains the model, and generates `out/schedule_events.json`.
-
-To review the generated schedule visually:
-
-```bash
-uv run jupyter lab out/lights_executed.ipynb
-```
+This fetches fresh data and generates `out/schedule_events.json`.
 
 Then start the daemon (on the machine that will stay home):
 
@@ -103,15 +92,24 @@ Stop the daemon early:
 ./stop_vacation_daemon.sh
 ```
 
+## Tuning
+
+`generate_resample.py` accepts a few knobs:
+
+- `--blocks N` — split each day into N equal-width time blocks, drawing an independent donor per block. Defaults to 2 (splits morning/evening), which empirically beats both whole-day replay (`--blocks 1`) and finer splits.
+- `--jitter-minutes M` — random offset (±M minutes) applied to each replayed event. Defaults to 10.
+- `--seed S` — fix the RNG for reproducible output.
+
 ## Files
 
 | File | Description |
 |------|-------------|
 | `fetch_ha_data.py` | Fetches light history from InfluxDB |
-| `lights.ipynb` | Trains the LSTM model and generates the vacation schedule |
+| `generate_resample.py` | Builds the vacation schedule via empirical-day resampling |
 | `vacation_daemon.py` | Executes the schedule via the Home Assistant REST API |
-| `generate_model.sh` | Runs fetch + train + generate in one step |
+| `configure.py` | Interactive entity selection → `config.json` |
+| `light_activity.py` | Generates an HTML activity report for recent days |
+| `generate_model.sh` | Runs fetch + generate in one step |
 | `start_vacation_daemon.sh` | Starts the daemon in the background |
 | `stop_vacation_daemon.sh` | Stops the daemon if it is running |
-| `out/schedule_events.json` | Generated on/off events (created by notebook) |
-| `out/lights_executed.ipynb` | Executed notebook with all outputs and charts |
+| `out/schedule_events.json` | Generated on/off events |

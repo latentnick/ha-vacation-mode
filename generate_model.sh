@@ -1,9 +1,8 @@
 #!/bin/bash
 # After running:
-#   1. View the output notebook:
-#        uv run jupyter lab out/lights_executed.ipynb
+#   1. Review out/schedule_events.json
 #   2. Start the vacation daemon:
-#        HA_URL=http://homeassistant.local:8123 HA_TOKEN=<token> nohup uv run vacation_daemon.py out/schedule_events.json > out/vacation_daemon.log 2>&1 &
+#        ./start_vacation_daemon.sh
 #   3. To monitor progress:
 #        tail -f out/vacation_daemon.log
 set -e
@@ -15,8 +14,4 @@ if [ "$#" -ne 2 ]; then
 fi
 
 uv run fetch_ha_data.py
-
-uv run papermill lights.ipynb out/lights_executed.ipynb \
-    --kernel lights \
-    -p VACATION_START "$1" \
-    -p VACATION_END "$2"
+uv run generate_resample.py "$1" "$2"
