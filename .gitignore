@@ -16,3 +16,15 @@ config.json
 # Generated output
 out/
 IMPLEMENTATION_PLAN.md
+
+# Node
+node_modules/
+
+# Swift
+.build/
+.swiftpm/
+menubar/build/
+
+# Runtime artifacts (kept out of repo; daemon writes to ~/Library)
+*.log
+persist/
