@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var watcher: StateWatcher
+    @EnvironmentObject var schedule: ScheduleStatus
 
     var body: some View {
         VStack(spacing: 12) {
@@ -18,8 +19,20 @@ struct ContentView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Divider()
+
+            if schedule.isRunning {
+                Text("Generating schedule…").font(.caption).foregroundStyle(.secondary)
+            } else if let err = schedule.lastError {
+                Text("Schedule error: \(err)").font(.caption).foregroundStyle(.red).lineLimit(2)
+            } else if let gen = schedule.lastGenerated {
+                Text("Schedule generated \(gen, style: .relative) ago").font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text("No schedule generated yet").font(.caption).foregroundStyle(.secondary)
+            }
         }
-        .padding(24)
-        .frame(width: 220)
+        .padding(20)
+        .frame(width: 240)
     }
 }
