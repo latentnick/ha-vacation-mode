@@ -135,6 +135,7 @@ enum Resampler {
         transitions: [RawStateRow],
         entities: [String],
         sim: inout [String: Int],
+        lastEmittedTime: inout [String: Date],
         jitterMinutes: Int,
         rng: inout G
     ) -> [ScheduleEvent] {
@@ -148,6 +149,7 @@ enum Resampler {
                 let action = want == 1 ? "turn_on" : "turn_off"
                 out.append(ScheduleEvent(time: targetStart, entityId: e, action: action))
                 sim[e] = want
+                lastEmittedTime[e] = targetStart
             }
         }
         // Replay donor events in [donorStart, donorEnd).
@@ -159,9 +161,16 @@ enum Resampler {
             var t = targetStart.addingTimeInterval(offset + j)
             if t < targetStart { t = targetStart }
             if t >= targetEnd { t = blockEndMinusOne }
+            // Preserve per-entity event order: a brief ON/OFF pair must not
+            // reorder under independent jitter (otherwise the post-sort dedup
+            // would silently drop the OFF). Clamp to >= last emitted time.
+            if let prev = lastEmittedTime[ev.entity], t <= prev {
+                t = prev.addingTimeInterval(0.001)
+            }
             let cur = sim[ev.entity] ?? 0
             if cur == ev.state { continue }
             sim[ev.entity] = ev.state
+            lastEmittedTime[ev.entity] = t
             let action = ev.state == 1 ? "turn_on" : "turn_off"
             out.append(ScheduleEvent(time: t, entityId: ev.entity, action: action))
         }
@@ -193,6 +202,7 @@ enum Resampler {
         let offsets = blockOffsets(options.blocks)
         var sim: [String: Int] = [:]
         for e in entities { sim[e] = 0 }
+        var lastEmittedTime: [String: Date] = [:]
         var raw: [ScheduleEvent] = []
 
         var rng = SeededGenerator(seed: options.seed ?? UInt64.random(in: 1...UInt64.max))
@@ -208,6 +218,7 @@ enum Resampler {
                     transitions: trans,
                     entities: entities,
                     sim: &sim,
+                    lastEmittedTime: &lastEmittedTime,
                     jitterMinutes: options.jitterMinutes,
                     rng: &rng
                 )

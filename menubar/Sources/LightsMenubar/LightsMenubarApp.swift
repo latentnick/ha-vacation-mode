@@ -20,26 +20,33 @@ struct LightsMenubarApp: App {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var watcher: StateWatcher!
     private var scheduleStatus: ScheduleStatus!
     private var nightly: NightlyScheduler!
+    private var executor: ScheduleExecutor!
+    private var switchDaemon: SwitchDaemon!
     private var cancellable: AnyCancellable?
     private var configWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         watcher = StateWatcher()
         scheduleStatus = ScheduleStatus()
+        executor = ScheduleExecutor(watcher: watcher, configProvider: { AppConfig.load() })
+        switchDaemon = SwitchDaemon()
 
         popover = NSPopover()
         popover.behavior = .transient
-        popover.contentSize = NSSize(width: 240, height: 170)
+        popover.contentSize = NSSize(width: 340, height: 300)
         popover.contentViewController = NSHostingController(
             rootView: ContentView()
                 .environmentObject(watcher)
                 .environmentObject(scheduleStatus)
+                .environmentObject(executor)
+                .environmentObject(switchDaemon)
         )
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -61,6 +68,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if AppConfig.load().isComplete {
             nightly.start()
         }
+
+        switchDaemon.start()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        switchDaemon?.stop()
     }
 
     private func updateIcon(on: Bool) {
@@ -92,6 +105,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Configure…", action: #selector(openConfig), keyEquivalent: "").configuredTarget(self))
         menu.addItem(NSMenuItem(title: "Generate schedule now", action: #selector(generateNow), keyEquivalent: "").configuredTarget(self))
+        menu.addItem(.separator())
+        let status = NSMenuItem(title: "Switch: \(daemonStatusText())", action: nil, keyEquivalent: "")
+        status.isEnabled = false
+        menu.addItem(status)
+        menu.addItem(NSMenuItem(title: "Restart switch daemon", action: #selector(restartDaemon), keyEquivalent: "").configuredTarget(self))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "").configuredTarget(self))
         statusItem.menu = menu
@@ -128,6 +146,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { [weak self] in
             guard let self else { return }
             await ScheduleGenerator.runOnce(config: AppConfig.load(), status: self.scheduleStatus)
+        }
+    }
+
+    @objc private func restartDaemon() {
+        switchDaemon.restart()
+    }
+
+    private func daemonStatusText() -> String {
+        switch switchDaemon.state {
+        case .stopped: return "stopped"
+        case .running: return "running"
+        case .notConfigured: return "not configured"
+        case .failed: return "failed"
         }
     }
 

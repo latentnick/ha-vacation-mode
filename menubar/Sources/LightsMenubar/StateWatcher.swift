@@ -1,9 +1,12 @@
 import Foundation
 import Combine
 
+enum AwayState { case unknown, off, on }
+
 final class StateWatcher: ObservableObject {
     @Published var on: Bool = false
     @Published var lastUpdated: Date? = nil
+    @Published var awayState: AwayState = .unknown
 
     private let stateURL: URL
     private var fileSource: DispatchSourceFileSystemObject?
@@ -27,6 +30,9 @@ final class StateWatcher: ObservableObject {
         struct Payload: Decodable { let on: Bool; let updated: String }
         guard let data = try? Data(contentsOf: stateURL),
               let payload = try? JSONDecoder().decode(Payload.self, from: data) else {
+            DispatchQueue.main.async { [weak self] in
+                self?.awayState = .unknown
+            }
             return
         }
         let formatter = ISO8601DateFormatter()
@@ -35,6 +41,7 @@ final class StateWatcher: ObservableObject {
         DispatchQueue.main.async { [weak self] in
             self?.on = payload.on
             self?.lastUpdated = date
+            self?.awayState = payload.on ? .on : .off
         }
     }
 

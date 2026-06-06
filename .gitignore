@@ -28,3 +28,6 @@ menubar/build/
 # Runtime artifacts (kept out of repo; daemon writes to ~/Library)
 *.log
 persist/
+
+# macOS
+.DS_Store
