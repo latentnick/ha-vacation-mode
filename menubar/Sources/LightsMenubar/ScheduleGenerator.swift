@@ -24,13 +24,34 @@ enum ScheduleGenerator {
         await MainActor.run { status.isRunning = true; status.lastError = nil }
         defer { Task { @MainActor in status.isRunning = false } }
 
-        guard config.isComplete,
-              let token = KeychainStore.get(account: AppConfig.haTokenAccount),
+        guard !config.ha.url.isEmpty, !config.influx.host.isEmpty, !config.entities.isEmpty,
               let baseURL = URL(string: config.ha.url) else {
             await MainActor.run { status.lastError = "Configuration incomplete" }
             return
         }
-        let influxPassword = KeychainStore.get(account: AppConfig.influxPasswordAccount) ?? ""
+
+        // Read credentials explicitly so a Keychain *access* failure (e.g. the
+        // ACL no longer matches this build's signature) surfaces as a clear
+        // error, rather than being mistaken for "not configured" or silently
+        // turning into an empty password that 401s against InfluxDB.
+        let token: String
+        let influxPassword: String
+        do {
+            guard let t = try KeychainStore.read(account: AppConfig.haTokenAccount) else {
+                await MainActor.run { status.lastError = "Configuration incomplete (no HA token saved)" }
+                return
+            }
+            token = t
+            // A missing Influx password is legitimate (some setups have none);
+            // only a read *error* throws and is handled below.
+            influxPassword = try KeychainStore.read(account: AppConfig.influxPasswordAccount) ?? ""
+        } catch {
+            log.error("Keychain read failed: \(String(describing: error), privacy: .public)")
+            await MainActor.run {
+                status.lastError = "Couldn't read credentials from Keychain (\(error)). If you just rebuilt the app, open Configure and re-save the password to re-authorize access."
+            }
+            return
+        }
 
         do {
             // Map full HA entity ids -> short InfluxDB names.

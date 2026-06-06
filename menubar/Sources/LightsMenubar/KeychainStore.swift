@@ -37,7 +37,15 @@ enum KeychainStore {
         cacheQueue.sync { cache[account] = value }
     }
 
-    static func get(account: String) -> String? {
+    /// Returns the stored value, or `nil` if no item exists for `account`.
+    ///
+    /// Throws if an item *does* exist but can't be read — most commonly because
+    /// the per-app ACL no longer matches this build's code signature, so the OS
+    /// would prompt for access and that fails when running unattended. Callers
+    /// must distinguish this from "no item" so a Keychain-access failure can be
+    /// surfaced as a clear error instead of silently degrading (e.g. an empty
+    /// password that then 401s against InfluxDB).
+    static func read(account: String) throws -> String? {
         if let cached = cacheQueue.sync(execute: { cache[account] }) {
             return cached
         }
@@ -50,10 +58,25 @@ enum KeychainStore {
         ]
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess, let data = item as? Data,
-              let value = String(data: data, encoding: .utf8) else { return nil }
-        cacheQueue.sync { cache[account] = value }
-        return value
+        switch status {
+        case errSecSuccess:
+            guard let data = item as? Data,
+                  let value = String(data: data, encoding: .utf8) else {
+                throw KeychainError(errSecDecode)
+            }
+            cacheQueue.sync { cache[account] = value }
+            return value
+        case errSecItemNotFound:
+            return nil
+        default:
+            throw KeychainError(status)
+        }
+    }
+
+    /// Convenience wrapper that collapses any failure to `nil`. Use `read` when
+    /// you need to tell "not stored" apart from "couldn't be read".
+    static func get(account: String) -> String? {
+        try? read(account: account)
     }
 
     static func delete(account: String) {
