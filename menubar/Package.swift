@@ -6,5 +6,6 @@ let package = Package(
     platforms: [.macOS(.v13)],
     targets: [
         .executableTarget(name: "LightsMenubar"),
+        .testTarget(name: "LightsMenubarTests", dependencies: ["LightsMenubar"]),
     ]
 )

@@ -1,6 +1,9 @@
 import Foundation
 
-/// CLI shim used by `LightsMenubar --resample` for headless verification against the Python script.
+/// Headless generation entry point (`LightsMenubar --resample`): builds a schedule from
+/// an exported state CSV without launching the UI. Useful for debugging and reproducing a
+/// schedule from a fixed seed. Correctness of the underlying `Resampler` is covered by the
+/// unit tests in `Tests/LightsMenubarTests`.
 ///
 /// Usage: LightsMenubar --resample <start YYYY-MM-DD> <end YYYY-MM-DD> <data.csv> <entity_map.json> <out.json> [seed]
 enum ResampleCLI {

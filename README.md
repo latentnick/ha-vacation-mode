@@ -2,114 +2,85 @@
 
 Generates a realistic on/off schedule for your home's lights while you're on vacation — making the house look occupied.
 
-Uses Home Assistant + InfluxDB for historical data, empirical-day resampling to build the schedule, and a daemon that calls the Home Assistant REST API to execute it.
+It's a macOS menubar app that pulls ~6 months of light-state history from Home Assistant (via InfluxDB), builds a schedule by empirical-day resampling, and executes it by calling the Home Assistant REST API. It also publishes a virtual HomeKit switch you can flip to arm/disarm the schedule from the Home app.
 
 ## How it works
 
-1. **Fetch data** — pulls ~6 months of light state history from InfluxDB
+1. **Fetch data** — pulls light-state history from InfluxDB
 2. **Generate schedule** — for each block of each vacation day, samples a real historical day (matching day-of-week, weighted toward seasonally close donors) and replays its switch events with small jitter
-3. **Run daemon** — executes the schedule by calling the Home Assistant REST API at each event time
+3. **Execute** — when the virtual switch is turned on, the app calls the Home Assistant REST API at each event time; when it's off, everything is left off
 
-The resampling approach beat an LSTM and a Neural-Hawkes hazard model on realism metrics (hourly on-rate, switch-frequency, KL divergence vs. history) — every generated day is a perturbation of something that actually happened in your home.
+The schedule is regenerated nightly. Every generated day is a perturbation of something that actually happened in your home, which beat an LSTM and a Neural-Hawkes hazard model on realism metrics (hourly on-rate, switch-frequency, KL divergence vs. history).
 
 ## Prerequisites
 
-- [uv](https://docs.astral.sh/uv/) — Python package manager
+- macOS 13 or later
+- [Swift](https://www.swift.org/install/) 5.9+ toolchain (Xcode or command-line tools) to build
+- [Node.js](https://nodejs.org/) — vendored into the app bundle at build time for the virtual HomeKit switch
 - Home Assistant with the InfluxDB add-on installed and recording light states
-- A machine that stays on while you're away (the daemon runs there)
+- A Mac that stays on while you're away (it runs the menubar app and the switch)
 
-## Setup
-
-**1. Clone the repo and install dependencies**
+## Build
 
 ```bash
-git clone <repo-url>
-cd lights
-uv sync
+cd menubar
+./build.sh
 ```
 
-**2. Configure credentials**
+This compiles the app and bundles the Node.js virtual-switch daemon into `LightsMenubar.app`. Copy that to `/Applications` (or launch it in place) and add it to your login items so it starts on boot.
 
-Copy `.env.example` to `.env` and fill in your values:
+## Configure
 
-```bash
-cp .env.example .env
-```
+Launch the app and open **Configure…** from the menubar icon. You'll provide:
 
-```ini
-HA_URL=http://homeassistant.local:8123
-HA_TOKEN=<long-lived access token from HA Profile → Security>
-INFLUXDB_HOST=homeassistant.local
-INFLUXDB_PORT=8086
-INFLUXDB_USER=<influxdb username>
-INFLUXDB_PASSWORD=<influxdb password>
-INFLUXDB_DATABASE=homeassistant
-```
+- **Home Assistant URL** and a **Long-Lived Access Token** (HA **Profile → Security → Long-Lived Access Tokens**). The token is stored in the macOS Keychain.
+- **InfluxDB** host/port/user/password and database (from HA **Settings → Add-ons → InfluxDB → Open Web UI → InfluxDB Admin → Users**). The password is stored in the Keychain.
+- The **light entities** to control (fetched live from Home Assistant).
+- **Schedule** knobs — vacation length, history window, blocks per day, and jitter.
 
-Get a Long-Lived Access Token from Home Assistant: **Profile → Security → Long-Lived Access Tokens**.
-
-Get InfluxDB credentials from Home Assistant: **Settings → Add-ons → InfluxDB → Open Web UI → InfluxDB Admin → Users**.
-
-**3. Configure your light entities**
-
-Run the interactive configuration script, which queries Home Assistant and lets you choose which lights to include:
-
-```bash
-uv run configure.py
-```
-
-This writes `config.json`. Alternatively, copy `config.json.example` and edit it manually:
-
-```bash
-cp config.json.example config.json
-```
+Configuration is saved to `~/Library/Application Support/lights-menubar/config.json`; secrets live in the Keychain.
 
 ## Usage
 
-Before you leave, run:
+Pair the app's virtual HomeKit switch from the iOS/macOS **Home** app (the pairing PIN is shown in the menubar until it's paired). Then:
 
-```bash
-./generate_model.sh 2026-04-01 2026-04-08
-```
+- **Turn the switch on** to arm the vacation schedule — the app replays lights until you turn it off.
+- **Turn the switch off** to stop; all lights are left off.
 
-This fetches fresh data and generates `out/schedule_events.json`.
-
-Then start the daemon (on the machine that will stay home):
-
-```bash
-./start_vacation_daemon.sh
-```
-
-Monitor progress:
-
-```bash
-tail -f out/vacation_daemon.log
-```
-
-Stop the daemon early:
-
-```bash
-./stop_vacation_daemon.sh
-```
+The menubar's right-click menu also offers **Generate schedule now**, switch-daemon status, and a manual **Restart switch daemon**.
 
 ## Tuning
 
-`generate_resample.py` accepts a few knobs:
+The schedule generator (`Resampler`) is controlled by the **Schedule** section in Configure:
 
-- `--blocks N` — split each day into N equal-width time blocks, drawing an independent donor per block. Defaults to 2 (splits morning/evening), which empirically beats both whole-day replay (`--blocks 1`) and finer splits.
-- `--jitter-minutes M` — random offset (±M minutes) applied to each replayed event. Defaults to 10.
-- `--seed S` — fix the RNG for reproducible output.
+- **Blocks** — split each day into N equal-width time blocks, drawing an independent donor per block. Defaults to 2 (morning/evening split), which empirically beats both whole-day replay (1 block) and finer splits.
+- **Jitter** — random ±M-minute offset applied to each replayed event. Defaults to 10.
+- **History days** — how far back to pull donor days from. Defaults to 183 (~6 months).
 
-## Files
+For reproducible output while debugging, the headless CLI accepts a fixed seed:
 
-| File | Description |
+```bash
+.build/debug/LightsMenubar --resample <start YYYY-MM-DD> <end YYYY-MM-DD> <data.csv> <entity_map.json> <out.json> [seed]
+```
+
+## Development
+
+Run the unit tests (they cover the resampler and CLI parsing):
+
+```bash
+cd menubar
+swift test
+```
+
+## Layout
+
+| Path | Description |
 |------|-------------|
-| `fetch_ha_data.py` | Fetches light history from InfluxDB |
-| `generate_resample.py` | Builds the vacation schedule via empirical-day resampling |
-| `vacation_daemon.py` | Executes the schedule via the Home Assistant REST API |
-| `configure.py` | Interactive entity selection → `config.json` |
-| `light_activity.py` | Generates an HTML activity report for recent days |
-| `generate_model.sh` | Runs fetch + generate in one step |
-| `start_vacation_daemon.sh` | Starts the daemon in the background |
-| `stop_vacation_daemon.sh` | Stops the daemon if it is running |
-| `out/schedule_events.json` | Generated on/off events |
+| `menubar/Sources/LightsMenubar/` | The macOS menubar app (SwiftUI) |
+| `menubar/Sources/LightsMenubar/InfluxClient.swift` | Fetches light history from InfluxDB |
+| `menubar/Sources/LightsMenubar/Resampler.swift` | Builds the vacation schedule via empirical-day resampling |
+| `menubar/Sources/LightsMenubar/ScheduleExecutor.swift` | Executes the schedule via the Home Assistant REST API |
+| `menubar/Sources/LightsMenubar/SwitchDaemon.swift` | Supervises the bundled virtual HomeKit switch |
+| `menubar/Tests/LightsMenubarTests/` | Unit tests |
+| `switch/` | Node.js virtual HomeKit switch daemon (`hap-nodejs`), bundled into the app |
+| `menubar/build.sh` | Builds the app and bundles the switch daemon + Node.js |
