@@ -1,0 +1,4 @@
+# Only resolve dependency versions that have been published for at least this
+# long (minutes; 10080 = 7 days). Gives the ecosystem time to yank or patch a
+# compromised or broken release before it can enter our lockfile.
+minimumReleaseAge: 10080
