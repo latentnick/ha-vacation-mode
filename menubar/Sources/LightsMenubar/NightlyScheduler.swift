@@ -1,6 +1,7 @@
 import Foundation
 import os
 
+@MainActor
 final class NightlyScheduler {
     private var timer: DispatchSourceTimer?
     private let queue = DispatchQueue(label: "com.nicklee.lights-menubar.nightly")
@@ -31,8 +32,8 @@ final class NightlyScheduler {
         let t = DispatchSource.makeTimerSource(queue: queue)
         t.schedule(deadline: .now() + delay)
         t.setEventHandler { [weak self] in
-            guard let self else { return }
-            Task {
+            Task { @MainActor in
+                guard let self else { return }
                 await ScheduleGenerator.runOnce(config: self.configProvider(), status: self.status)
                 self.scheduleNext()
             }

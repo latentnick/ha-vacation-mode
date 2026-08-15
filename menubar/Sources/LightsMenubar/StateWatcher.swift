@@ -3,6 +3,7 @@ import Combine
 
 enum AwayState { case unknown, off, on }
 
+@MainActor
 final class StateWatcher: ObservableObject {
     @Published var on: Bool = false
     @Published var lastUpdated: Date? = nil
@@ -30,19 +31,14 @@ final class StateWatcher: ObservableObject {
         struct Payload: Decodable { let on: Bool; let updated: String }
         guard let data = try? Data(contentsOf: stateURL),
               let payload = try? JSONDecoder().decode(Payload.self, from: data) else {
-            DispatchQueue.main.async { [weak self] in
-                self?.awayState = .unknown
-            }
+            awayState = .unknown
             return
         }
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let date = formatter.date(from: payload.updated)
-        DispatchQueue.main.async { [weak self] in
-            self?.on = payload.on
-            self?.lastUpdated = date
-            self?.awayState = payload.on ? .on : .off
-        }
+        on = payload.on
+        lastUpdated = formatter.date(from: payload.updated)
+        awayState = payload.on ? .on : .off
     }
 
     private func startWatching() {
@@ -61,17 +57,20 @@ final class StateWatcher: ObservableObject {
             eventMask: [.write, .rename, .delete],
             queue: .main
         )
+        // The handler queue is `.main`, so the assumption always holds.
         source.setEventHandler { [weak self, weak source] in
-            guard let self, let source else { return }
-            let event = source.data
-            self.readNow()
-            if event.contains(.delete) || event.contains(.rename) {
-                source.cancel()
-                self.fileSource = nil
-                if FileManager.default.fileExists(atPath: self.stateURL.path) {
-                    self.startWatchingFile()
-                } else {
-                    self.startWatchingDir()
+            MainActor.assumeIsolated {
+                guard let self, let source else { return }
+                let event = source.data
+                self.readNow()
+                if event.contains(.delete) || event.contains(.rename) {
+                    source.cancel()
+                    self.fileSource = nil
+                    if FileManager.default.fileExists(atPath: self.stateURL.path) {
+                        self.startWatchingFile()
+                    } else {
+                        self.startWatchingDir()
+                    }
                 }
             }
         }
@@ -91,12 +90,14 @@ final class StateWatcher: ObservableObject {
             queue: .main
         )
         source.setEventHandler { [weak self, weak source] in
-            guard let self, let source else { return }
-            if FileManager.default.fileExists(atPath: self.stateURL.path) {
-                source.cancel()
-                self.dirSource = nil
-                self.readNow()
-                self.startWatchingFile()
+            MainActor.assumeIsolated {
+                guard let self, let source else { return }
+                if FileManager.default.fileExists(atPath: self.stateURL.path) {
+                    source.cancel()
+                    self.dirSource = nil
+                    self.readNow()
+                    self.startWatchingFile()
+                }
             }
         }
         source.setCancelHandler { close(fd) }

@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import Synchronization
 
 enum KeychainStore {
     static let service = "com.nicklee.lights-menubar"
@@ -11,8 +12,7 @@ enum KeychainStore {
     // from compounding into a flurry of prompts whenever the schedule generator
     // runs (it pulls multiple credentials in quick succession), cache reads in
     // memory for the lifetime of the process.
-    private static let cacheQueue = DispatchQueue(label: "com.nicklee.lights-menubar.keychain-cache")
-    private static var cache: [String: String] = [:]
+    private static let cache = Mutex<[String: String]>([:])
 
     static func set(_ value: String, account: String) throws {
         let data = Data(value.utf8)
@@ -34,7 +34,7 @@ enum KeychainStore {
         } else {
             throw KeychainError(status)
         }
-        cacheQueue.sync { cache[account] = value }
+        cache.withLock { $0[account] = value }
     }
 
     /// Returns the stored value, or `nil` if no item exists for `account`.
@@ -46,7 +46,7 @@ enum KeychainStore {
     /// surfaced as a clear error instead of silently degrading (e.g. an empty
     /// password that then 401s against InfluxDB).
     static func read(account: String) throws -> String? {
-        if let cached = cacheQueue.sync(execute: { cache[account] }) {
+        if let cached = cache.withLock({ $0[account] }) {
             return cached
         }
         let query: [String: Any] = [
@@ -64,7 +64,7 @@ enum KeychainStore {
                   let value = String(data: data, encoding: .utf8) else {
                 throw KeychainError(errSecDecode)
             }
-            cacheQueue.sync { cache[account] = value }
+            cache.withLock { $0[account] = value }
             return value
         case errSecItemNotFound:
             return nil
@@ -86,7 +86,7 @@ enum KeychainStore {
             kSecAttrAccount as String: account,
         ]
         SecItemDelete(query as CFDictionary)
-        _ = cacheQueue.sync { cache.removeValue(forKey: account) }
+        _ = cache.withLock { $0.removeValue(forKey: account) }
     }
 }
 

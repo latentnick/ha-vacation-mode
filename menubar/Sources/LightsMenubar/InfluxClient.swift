@@ -10,7 +10,9 @@ struct InfluxClient {
     /// Fetch state-history rows from InfluxDB v1.8 for the given short entity names since `since` (UTC).
     /// Mirrors fetch_ha_data.py: one query per entity, filter to "on"/"off", convert to RawStateRow.
     func fetchStateHistory(shortEntityNames: [String], since: Date) async throws -> [RawStateRow] {
-        let rfc = Self.rfc3339.string(from: since)
+        let rfc3339 = ISO8601DateFormatter()
+        rfc3339.formatOptions = [.withInternetDateTime]
+        let rfc = rfc3339.string(from: since)
         var all: [RawStateRow] = []
         for name in shortEntityNames {
             let escaped = name.replacingOccurrences(of: "'", with: "\\'")
@@ -71,10 +73,4 @@ struct InfluxClient {
         }
         return rows
     }
-
-    private static let rfc3339: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f
-    }()
 }
