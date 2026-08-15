@@ -7,9 +7,9 @@
 set -euo pipefail
 
 # Pinned to a hap-nodejs-supported LTS (engines: ^18 || ^20 || ^22 || ^24).
-NODE_VERSION="v22.22.3"
-SHA_ARM64="0da7ff74ef8611328c8212f17943368713a2ad953fb7d89a8c8a0eae87c23207"
-SHA_X64="45830ba752fa0d892c6dcd640946669801293cac820a33591ded40ac075198ec"
+NODE_VERSION="v24.19.0"
+SHA_ARM64="8294b7aa9b03997481c06babf1e8b270c859358f27da57a11509afe537ac381d"
+SHA_X64="d1b5e999db158c62fe8f7267a4476b035d8bd93b1a605bac24a3f0dd166e3316"
 
 DEST="${1:?usage: vendor-node.sh <dest-dir>}"
 CACHE_DIR="${TMPDIR:-/tmp}/lights-node-cache"

@@ -14,8 +14,8 @@ The schedule is regenerated nightly. Every generated day is a perturbation of so
 
 ## Prerequisites
 
-- macOS 13 or later
-- [Swift](https://www.swift.org/install/) 5.9+ toolchain (Xcode or command-line tools) to build
+- macOS 26 (Tahoe) or later
+- [Swift](https://www.swift.org/install/) 6.3+ toolchain (Xcode or command-line tools) to build
 - [Node.js](https://nodejs.org/) — vendored into the app bundle at build time for the virtual HomeKit switch
 - Home Assistant with the InfluxDB add-on installed and recording light states
 - A Mac that stays on while you're away (it runs the menubar app and the switch)

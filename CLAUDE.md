@@ -35,7 +35,9 @@ It is a **macOS menubar app** (SwiftUI, in `menubar/`) that does all of this nat
 - Run the tests: `cd menubar && swift test`
 - Headless schedule generation (debug): `LightsMenubar --resample <start> <end> <data.csv> <entity_map.json> <out.json> [seed]`
 
-The Swift toolchain is 5.9+; the app targets macOS 13.
+The Swift toolchain is 6.3+; the app targets macOS 26 (Tahoe). The package uses
+swift-tools-version 6.3 but pins the Swift 5 language mode — see the note in
+`Package.swift`.
 
 ## Testing
 
