@@ -10,7 +10,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "packageManager": "pnpm@11.20.0",
+  "packageManager": "pnpm@12.6.0",
   "dependencies": {
     "hap-nodejs": "^0.14.3"
   }

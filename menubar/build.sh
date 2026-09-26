@@ -32,7 +32,7 @@ mkdir -p "$SWITCH_DST"
 cp "$STAGE/index.js" "$SWITCH_DST/index.js"
 cp -R "$STAGE/node_modules" "$SWITCH_DST/node_modules"
 
-# --- Bundle a pinned Node 22 LTS runtime (per build arch) ---
+# --- Bundle a pinned Node 24 LTS runtime (per build arch) ---
 scripts/vendor-node.sh "$RES/node"
 
 # --- Code signing ---
