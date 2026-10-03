@@ -40,9 +40,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         popover = NSPopover()
         popover.behavior = .transient
-        popover.contentSize = NSSize(width: 340, height: 300)
+        popover.contentSize = NSSize(width: 360, height: 340)
         popover.contentViewController = NSHostingController(
-            rootView: ContentView()
+            rootView: ContentView(
+                openSettings: { [weak self] in
+                    self?.popover.performClose(nil)
+                    self?.openConfig()
+                },
+                refreshSchedule: { [weak self] in self?.generateNow() }
+            )
                 .environmentObject(watcher)
                 .environmentObject(scheduleStatus)
                 .environmentObject(executor)
@@ -112,9 +118,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showContextMenu() {
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Configure…", action: #selector(openConfig), keyEquivalent: "").configuredTarget(self))
-        menu.addItem(NSMenuItem(title: "Generate schedule now", action: #selector(generateNow), keyEquivalent: "").configuredTarget(self))
-        menu.addItem(.separator())
         let status = NSMenuItem(title: "Switch: \(daemonStatusText())", action: nil, keyEquivalent: "")
         status.isEnabled = false
         menu.addItem(status)

@@ -53,7 +53,9 @@ struct InfluxClient {
         var req = URLRequest(url: url)
         let creds = "\(user):\(password)".data(using: .utf8)!.base64EncodedString()
         req.setValue("Basic \(creds)", forHTTPHeaderField: "Authorization")
-        let (data, resp) = try await URLSession.shared.data(for: req)
+        let (data, resp) = try await NetworkRetry.run {
+            try await URLSession.shared.data(for: req)
+        }
         if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             let body = String(data: data, encoding: .utf8) ?? ""
             throw NSError(domain: "InfluxClient", code: http.statusCode,

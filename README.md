@@ -31,7 +31,7 @@ This compiles the app and bundles the Node.js virtual-switch daemon into `Lights
 
 ## Configure
 
-Launch the app and open **Configure…** from the menubar icon. You'll provide:
+Launch the app, click the menubar icon, and open settings using the button at the top of the popover. You'll provide:
 
 - **Home Assistant URL** and a **Long-Lived Access Token** (HA **Profile → Security → Long-Lived Access Tokens**). The token is stored in the macOS Keychain.
 - **InfluxDB** host/port/user/password and database (from HA **Settings → Add-ons → InfluxDB → Open Web UI → InfluxDB Admin → Users**). The password is stored in the Keychain.
@@ -47,7 +47,7 @@ Pair the app's virtual HomeKit switch from the iOS/macOS **Home** app (the pairi
 - **Turn the switch on** to arm the vacation schedule — the app replays lights until you turn it off.
 - **Turn the switch off** to stop; all lights are left off.
 
-The menubar's right-click menu also offers **Generate schedule now**, switch-daemon status, and a manual **Restart switch daemon**.
+Use **Refresh schedule** in the popover to regenerate the schedule. The menubar's right-click menu offers switch-daemon status, **Restart switch daemon**, and **Quit**.
 
 ## Tuning
 

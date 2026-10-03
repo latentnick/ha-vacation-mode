@@ -20,10 +20,16 @@ enum ScheduleGenerator {
 
     static let log = Logger(subsystem: "com.nicklee.lights-menubar", category: "ScheduleGenerator")
 
+    @MainActor
     static func runOnce(config: AppConfig, status: ScheduleStatus) async {
-        await MainActor.run { status.isRunning = true; status.lastError = nil }
-        defer { Task { @MainActor in status.isRunning = false } }
+        guard !status.isRunning else { return }
+        status.isRunning = true
+        status.lastError = nil
+        defer { status.isRunning = false }
+        await generate(config: config, status: status)
+    }
 
+    private static func generate(config: AppConfig, status: ScheduleStatus) async {
         guard !config.ha.url.isEmpty, !config.influx.host.isEmpty, !config.entities.isEmpty,
               let baseURL = URL(string: config.ha.url) else {
             await MainActor.run { status.lastError = "Configuration incomplete" }
