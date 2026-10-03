@@ -93,7 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateIcon(on: Bool) {
         statusItem.button?.image = NSImage(
-            systemSymbolName: on ? "power.circle.fill" : "power.circle",
+            systemSymbolName: on ? "house.fill" : "house",
             accessibilityDescription: "Lights"
         )
     }
