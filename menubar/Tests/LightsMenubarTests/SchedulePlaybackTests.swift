@@ -71,6 +71,50 @@ final class SchedulePlaybackTests: XCTestCase {
         XCTAssertEqual(sent, ["turn_on", "turn_off"])
     }
 
+    func testDisarmTurnsOffAllConfiguredLightsAndRemovesFutureEvents() async {
+        let playback = SchedulePlayback()
+        playback.events = [event(0, "a", "turn_on"), event(10, "a", "turn_off"),
+                           event(20, "b", "turn_on")]
+        _ = await playback.reconcile(now: { self.start }) { _ in }
+        playback.disarm(entities: ["a", "b", "b", "c"], at: start)
+        var sent: [ScheduledEvent] = []
+        _ = await playback.reconcile(now: { self.start }) { sent.append($0) }
+        XCTAssertEqual(sent.map(\.entity_id), ["a", "b", "c"])
+        XCTAssertTrue(sent.allSatisfy { $0.action == "turn_off" })
+        sent = []
+        _ = await playback.reconcile(now: { self.start.addingTimeInterval(30) }) { sent.append($0) }
+        XCTAssertTrue(sent.isEmpty)
+    }
+
+    func testDisarmWaitsForInflightOnThenSendsOff() async {
+        let playback = SchedulePlayback()
+        playback.events = [event(0, "a", "turn_on"), event(0, "b", "turn_on")]
+        var sent: [String] = []
+        _ = await playback.reconcile(now: { self.start }) { event in
+            sent.append("\(event.entity_id):\(event.action)")
+            if event.action == "turn_on" {
+                playback.disarm(entities: ["a", "b"], at: self.start)
+                await Task.yield()
+            }
+        }
+        XCTAssertEqual(sent, ["a:turn_on", "a:turn_off", "b:turn_off"])
+        XCTAssertFalse(playback.hasPending(at: start))
+    }
+
+    func testDisarmRetriesFailedShutdownAndIgnoresPreviouslyConfirmedOff() async {
+        let playback = SchedulePlayback()
+        playback.events = [event(0, "a", "turn_off")]
+        _ = await playback.reconcile(now: { self.start }) { _ in }
+        playback.disarm(entities: ["a"], at: start)
+        let error = await playback.reconcile(now: { self.start }) { _ in throw URLError(.timedOut) }
+        XCTAssertNotNil(error)
+        XCTAssertTrue(playback.hasPending(at: start))
+        var sent: [String] = []
+        _ = await playback.reconcile(now: { self.start }) { sent.append($0.action) }
+        XCTAssertEqual(sent, ["turn_off"])
+        XCTAssertFalse(playback.hasPending(at: start))
+    }
+
     func testResetDiscardsInflightConfirmation() async {
         let playback = SchedulePlayback()
         playback.events = [event(0, "a", "turn_on")]

@@ -20,6 +20,7 @@ final class ScheduleExecutor: ObservableObject {
 
     private var events: [ScheduledEvent] = []
     private let playback = SchedulePlayback()
+    private var isStoppingLights = false
     private var reconcileTask: Task<Void, Never>?
     private var timer: DispatchSourceTimer?
     private let timerQueue = DispatchQueue(label: "com.nicklee.lights-menubar.executor")
@@ -36,7 +37,8 @@ final class ScheduleExecutor: ObservableObject {
                 guard let self else { return }
                 switch state {
                 case .on:  self.activate()
-                case .off, .unknown: self.deactivate()
+                case .off: self.deactivate(turnOff: true)
+                case .unknown: self.deactivate(turnOff: false)
                 }
             }
     }
@@ -52,12 +54,14 @@ final class ScheduleExecutor: ObservableObject {
     private func activate() {
         log.info("Activating executor")
         isActive = true
+        isStoppingLights = false
         lastError = nil
         startWatchingScheduleFile()
         reloadAndApply()
     }
 
-    private func deactivate() {
+    private func deactivate(turnOff: Bool) {
+        let wasActive = isActive
         log.info("Deactivating executor")
         isActive = false
         nextEvent = nil
@@ -67,8 +71,17 @@ final class ScheduleExecutor: ObservableObject {
         fileSource = nil
         dirSource?.cancel()
         dirSource = nil
-        reconcileTask?.cancel()
-        playback.reset()
+        if turnOff && wasActive {
+            isStoppingLights = true
+            // Include scheduled entities in case configuration changed while armed.
+            playback.disarm(entities: configProvider().entities + events.map(\.entity_id), at: Date())
+            processDueEvents()
+        } else if isStoppingLights {
+            processDueEvents()
+        } else {
+            reconcileTask?.cancel()
+            playback.reset()
+        }
     }
 
     private func reloadAndApply() {
@@ -116,14 +129,14 @@ final class ScheduleExecutor: ObservableObject {
     // MARK: - Reconciliation and timer scheduling
 
     private func processDueEvents() {
-        guard isActive, !events.isEmpty, reconcileTask == nil else { return }
+        guard (isActive || isStoppingLights), !playback.events.isEmpty, reconcileTask == nil else { return }
         reconcileTask = Task { [weak self] in
             guard let self else { return }
             let error = await self.playback.reconcile(now: Date.init) { event in
                 try await self.send(event)
             }
             self.reconcileTask = nil
-            guard self.isActive else { return }
+            guard self.isActive || self.isStoppingLights else { return }
             if Task.isCancelled {
                 self.processDueEvents()
                 return
@@ -136,9 +149,11 @@ final class ScheduleExecutor: ObservableObject {
     private func scheduleNextFutureEvent() {
         timer?.cancel(); timer = nil
         let now = Date()
-        nextEvent = events.first { $0.time > now }
+        nextEvent = isActive ? events.first { $0.time > now } : nil
         // Reconcile failed requests even if the schedule has no future events.
-        let retryAt = playback.hasPending(at: now) ? now.addingTimeInterval(5) : nil
+        let pending = playback.hasPending(at: now)
+        if !pending { isStoppingLights = false }
+        let retryAt = pending ? now.addingTimeInterval(5) : nil
         guard let deadline = [nextEvent?.time, retryAt].compactMap({ $0 }).min() else { return }
         let t = DispatchSource.makeTimerSource(queue: timerQueue)
         t.schedule(wallDeadline: .now() + max(0, deadline.timeIntervalSinceNow))

@@ -228,7 +228,7 @@ struct ContentView: View {
     }
 
     private var issue: String? {
-        if let error = executor.lastError, armed { return "Lighting: \(error)" }
+        if let error = executor.lastError { return "Lighting: \(error)" }
         if let error = schedule.lastError { return "Schedule: \(error)" }
         switch switchDaemon.state {
         case .failed(let message), .notConfigured(let message): return "HomeKit: \(message)"

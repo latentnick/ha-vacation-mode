@@ -13,6 +13,16 @@ final class SchedulePlayback {
         confirmed = [:]
     }
 
+    /// Replace the schedule with an explicit shutdown. Keep an in-flight send
+    /// serialized ahead of these OFFs, and discard cached states so every selected
+    /// light is turned off even if it was changed outside the app.
+    func disarm(entities: [String], at now: Date) {
+        events = Set(entities).sorted().map {
+            ScheduledEvent(time: now, entity_id: $0, action: "turn_off")
+        }
+        confirmed = [:]
+    }
+
     private func desired(at now: Date) -> [ScheduledEvent] {
         var latest: [String: ScheduledEvent] = [:]
         for event in events.sorted(by: { $0.time < $1.time }) where event.time <= now {
