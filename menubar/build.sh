@@ -26,10 +26,10 @@ SWITCH_SRC="../switch"
 SWITCH_DST="$RES/switch"
 STAGE="$WORK/switch-stage"
 mkdir -p "$STAGE"
-cp "$SWITCH_SRC/index.js" "$SWITCH_SRC/package.json" "$STAGE/"
+cp "$SWITCH_SRC/index.js" "$SWITCH_SRC/state.js" "$SWITCH_SRC/package.json" "$STAGE/"
 ( cd "$STAGE" && npm install --omit=dev --no-audit --no-fund --silent )
 mkdir -p "$SWITCH_DST"
-cp "$STAGE/index.js" "$SWITCH_DST/index.js"
+cp "$STAGE/index.js" "$STAGE/state.js" "$SWITCH_DST/"
 cp -R "$STAGE/node_modules" "$SWITCH_DST/node_modules"
 
 # --- Bundle a pinned Node 24 LTS runtime (per build arch) ---

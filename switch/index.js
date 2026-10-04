@@ -1,3 +1,4 @@
+import { restoreState } from "./state.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -68,7 +69,7 @@ function writeState(on) {
   fs.renameSync(STATE_TMP, STATE_FILE);
 }
 
-let on = false;
+let on = restoreState(STATE_FILE);
 writeState(on);
 
 const switchUUID = uuid.generate("hap-nodejs:virtual-switch");

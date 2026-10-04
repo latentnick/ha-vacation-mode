@@ -141,20 +141,20 @@ final class ResamplerTests: XCTestCase {
         return rows
     }
 
-    func testGenerateIsDeterministicWithSeed() {
+    func testGenerateIsDeterministicWithSeed() throws {
         let rows = sampleHistory()
         let map = ["kitchen": "switch.kitchen", "living": "switch.living"]
         let start = day(2026, 3, 1), end = day(2026, 3, 4)
         let opts = ResamplerOptions(blocks: 2, jitterMinutes: 10, seed: 12345)
-        let a = Resampler.generate(rows: rows, entityMap: map, vacationStart: start, vacationEnd: end, options: opts)
-        let b = Resampler.generate(rows: rows, entityMap: map, vacationStart: start, vacationEnd: end, options: opts)
+        let a = try Resampler.generate(rows: rows, entityMap: map, vacationStart: start, vacationEnd: end, options: opts)
+        let b = try Resampler.generate(rows: rows, entityMap: map, vacationStart: start, vacationEnd: end, options: opts)
         XCTAssertEqual(a.map(\.time), b.map(\.time))
         XCTAssertEqual(a.map(\.entityId), b.map(\.entityId))
         XCTAssertEqual(a.map(\.action), b.map(\.action))
     }
 
-    func testGenerateSortsEventsByTime() {
-        let events = Resampler.generate(
+    func testGenerateSortsEventsByTime() throws {
+        let events = try Resampler.generate(
             rows: sampleHistory(),
             entityMap: [:],
             vacationStart: day(2026, 3, 1), vacationEnd: day(2026, 3, 4),
@@ -163,8 +163,8 @@ final class ResamplerTests: XCTestCase {
         XCTAssertEqual(events.map(\.time), events.map(\.time).sorted())
     }
 
-    func testGenerateNeverEmitsConsecutiveSameStatePerEntity() {
-        let events = Resampler.generate(
+    func testGenerateNeverEmitsConsecutiveSameStatePerEntity() throws {
+        let events = try Resampler.generate(
             rows: sampleHistory(),
             entityMap: [:],
             vacationStart: day(2026, 3, 1), vacationEnd: day(2026, 3, 8),
@@ -178,8 +178,8 @@ final class ResamplerTests: XCTestCase {
         }
     }
 
-    func testGenerateLeavesEveryLightOffAtTheEnd() {
-        let events = Resampler.generate(
+    func testGenerateLeavesEveryLightOffAtTheEnd() throws {
+        let events = try Resampler.generate(
             rows: sampleHistory(),
             entityMap: [:],
             vacationStart: day(2026, 3, 1), vacationEnd: day(2026, 3, 6),
@@ -190,9 +190,9 @@ final class ResamplerTests: XCTestCase {
         XCTAssertTrue(state.values.allSatisfy { $0 == 0 }, "all lights should be off after the schedule ends")
     }
 
-    func testGenerateMapsShortNamesToFullEntityIds() {
+    func testGenerateMapsShortNamesToFullEntityIds() throws {
         let map = ["kitchen": "switch.kitchen", "living": "light.living"]
-        let events = Resampler.generate(
+        let events = try Resampler.generate(
             rows: sampleHistory(),
             entityMap: map,
             vacationStart: day(2026, 3, 1), vacationEnd: day(2026, 3, 3),
@@ -205,10 +205,10 @@ final class ResamplerTests: XCTestCase {
         }
     }
 
-    func testGenerateHonorsJitterBounds() {
+    func testGenerateHonorsJitterBounds() throws {
         // With zero jitter, replayed morning "kitchen on" events must land exactly
         // on the donor's 07:00 offset within each vacation day's first block.
-        let events = Resampler.generate(
+        let events = try Resampler.generate(
             rows: sampleHistory(),
             entityMap: [:],
             vacationStart: day(2026, 3, 1), vacationEnd: day(2026, 3, 2),
@@ -217,6 +217,62 @@ final class ResamplerTests: XCTestCase {
         let kitchenOn = events.first { $0.entityId == "kitchen" && $0.action == "turn_on" }
         let onHour = kitchenOn.map { Self.cal.component(.hour, from: $0.time) }
         XCTAssertEqual(onHour, 7)
+    }
+
+    func testEmptyHistoryThrowsRecoverableError() {
+        XCTAssertThrowsError(try Resampler.generate(rows: [], entityMap: [:],
+            vacationStart: day(2026, 3, 1), vacationEnd: day(2026, 3, 2))) {
+            XCTAssertEqual($0 as? ResamplerError, .noHistory)
+        }
+    }
+
+    func testInvalidOptionsThrowInsteadOfCrashing() {
+        for options in [ResamplerOptions(blocks: 0), ResamplerOptions(jitterMinutes: -1)] {
+            XCTAssertThrowsError(try Resampler.generate(rows: sampleHistory(), entityMap: [:],
+                vacationStart: day(2026, 3, 1), vacationEnd: day(2026, 3, 2), options: options)) {
+                XCTAssertEqual($0 as? ResamplerError, .invalidOptions)
+            }
+        }
+    }
+
+    func testDSTTargetsPreserveWallClockAndStayInsideVacation() throws {
+        // One ordinary donor day: both events must stay at these local times.
+        let rows = [RawStateRow(time: date(2026, 1, 4, 0, 30), entity: "a", state: 1),
+                    RawStateRow(time: date(2026, 1, 4, 23, 30), entity: "a", state: 0)]
+        for start in [day(2026, 3, 8), day(2026, 11, 1)] {
+            let end = Self.cal.date(byAdding: .day, value: 1, to: start)!
+            let events = try Resampler.generate(rows: rows, entityMap: [:], vacationStart: start,
+                vacationEnd: end, options: ResamplerOptions(blocks: 2, jitterMinutes: 0, seed: 1))
+            XCTAssertEqual(events.map(\.action), ["turn_on", "turn_off"])
+            XCTAssertEqual(events.map { Self.cal.component(.hour, from: $0.time) }, [0, 23])
+            XCTAssertEqual(events.map { Self.cal.component(.minute, from: $0.time) }, [30, 30])
+            XCTAssertTrue(events.allSatisfy { $0.time >= start && $0.time < end })
+        }
+    }
+
+    func testDSTDonorsPreserveLateEveningEvents() throws {
+        for donor in [day(2026, 3, 8), day(2026, 11, 1)] {
+            let rows = [RawStateRow(time: Self.cal.date(bySettingHour: 22, minute: 0, second: 0, of: donor)!, entity: "a", state: 1),
+                        RawStateRow(time: Self.cal.date(bySettingHour: 23, minute: 30, second: 0, of: donor)!, entity: "a", state: 0)]
+            let events = try Resampler.generate(rows: rows, entityMap: [:], vacationStart: day(2026, 12, 6),
+                vacationEnd: day(2026, 12, 7), options: ResamplerOptions(blocks: 2, jitterMinutes: 0, seed: 1))
+            XCTAssertEqual(events.map { Self.cal.component(.hour, from: $0.time) }, [22, 23])
+            XCTAssertEqual(events.map(\.action), ["turn_on", "turn_off"])
+        }
+    }
+
+    func testDSTSchedulesEndOffEvenWithLargeJitter() throws {
+        for start in [day(2026, 3, 8), day(2026, 11, 1)] {
+            let end = Self.cal.date(byAdding: .day, value: 1, to: start)!
+            for seed in 1...20 {
+                let events = try Resampler.generate(rows: sampleHistory(), entityMap: [:], vacationStart: start,
+                    vacationEnd: end, options: ResamplerOptions(blocks: 2, jitterMinutes: 120, seed: UInt64(seed)))
+                XCTAssertTrue(events.allSatisfy { $0.time >= start && $0.time < end })
+                var states: [String: String] = [:]
+                for event in events { states[event.entityId] = event.action }
+                XCTAssertTrue(states.values.allSatisfy { $0 == "turn_off" })
+            }
+        }
     }
 
     // MARK: - encodeJSON

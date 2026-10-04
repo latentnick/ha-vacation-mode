@@ -36,7 +36,7 @@ enum ResampleCLI {
                 exit(2)
             }
 
-            let events = Resampler.generate(
+            let events = try Resampler.generate(
                 rows: rows,
                 entityMap: entityMap,
                 vacationStart: start,

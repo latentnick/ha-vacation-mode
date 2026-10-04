@@ -88,7 +88,7 @@ enum ScheduleGenerator {
             let start = cal.startOfDay(for: Date())
             let end = cal.date(byAdding: .day, value: config.schedule.vacationDays, to: start)!
 
-            let events = Resampler.generate(
+            let events = try Resampler.generate(
                 rows: rows,
                 entityMap: entityMap,
                 vacationStart: start,
@@ -106,7 +106,7 @@ enum ScheduleGenerator {
             await MainActor.run { status.lastGenerated = Date() }
         } catch {
             log.error("Schedule generation failed: \(String(describing: error), privacy: .public)")
-            await MainActor.run { status.lastError = String(describing: error) }
+            await MainActor.run { status.lastError = error.localizedDescription }
         }
     }
 }

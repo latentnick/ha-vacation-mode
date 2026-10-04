@@ -31,6 +31,18 @@ struct SeededGenerator: RandomNumberGenerator {
     }
 }
 
+enum ResamplerError: Error, Equatable, LocalizedError {
+    case noHistory
+    case invalidOptions
+
+    var errorDescription: String? {
+        switch self {
+        case .noHistory: "No historical light states are available. Check the selected entities and history window."
+        case .invalidOptions: "Invalid vacation window or resampling options."
+        }
+    }
+}
+
 enum Resampler {
 
     static let pacific = TimeZone(identifier: "America/Los_Angeles")!
@@ -118,6 +130,15 @@ enum Resampler {
         return out
     }
 
+    /// Resolve wall-clock boundaries on the actual calendar day (23, 24, or 25 hours).
+    private static func boundary(day: Date, offset: TimeInterval) -> Date {
+        let cal = pacificCalendar
+        if offset == 86400 { return cal.date(byAdding: .day, value: 1, to: day)! }
+        let minutes = Int(offset / 60)
+        return cal.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0,
+                        of: day, matchingPolicy: .nextTime, repeatedTimePolicy: .first)!
+    }
+
     /// State of each entity immediately before time `t`, scanning the (already-sorted) transitions.
     static func stateAtTime(_ transitions: [RawStateRow], t: Date, entities: [String]) -> [String: Int] {
         var state: [String: Int] = [:]
@@ -139,6 +160,8 @@ enum Resampler {
         jitterMinutes: Int,
         rng: inout G
     ) -> [ScheduleEvent] {
+        // Nonexistent wall-clock times can collapse adjacent DST boundaries.
+        guard targetEnd > targetStart, donorEnd > donorStart else { return [] }
         var out: [ScheduleEvent] = []
         let donorState = stateAtTime(transitions, t: donorStart, entities: entities)
         // Alignment.
@@ -156,9 +179,13 @@ enum Resampler {
         let jitterSeconds = Double(jitterMinutes) * 60.0
         let blockEndMinusOne = targetEnd.addingTimeInterval(-1)
         for ev in transitions where ev.time >= donorStart && ev.time < donorEnd {
-            let offset = ev.time.timeIntervalSince(donorStart)
+            let cal = pacificCalendar
+            let clock = cal.dateComponents([.hour, .minute, .second, .nanosecond], from: ev.time)
+            let mapped = cal.date(bySettingHour: clock.hour!, minute: clock.minute!, second: clock.second!,
+                                  of: targetStart, matchingPolicy: .nextTime, repeatedTimePolicy: .first)!
+                .addingTimeInterval(Double(clock.nanosecond ?? 0) / 1_000_000_000)
             let j = Double.random(in: -jitterSeconds...jitterSeconds, using: &rng)
-            var t = targetStart.addingTimeInterval(offset + j)
+            var t = mapped.addingTimeInterval(j)
             if t < targetStart { t = targetStart }
             if t >= targetEnd { t = blockEndMinusOne }
             // Preserve per-entity event order: a brief ON/OFF pair must not
@@ -167,6 +194,8 @@ enum Resampler {
             if let prev = lastEmittedTime[ev.entity], t <= prev {
                 t = prev.addingTimeInterval(0.001)
             }
+            // Dense or repeated-hour events may exhaust the block; never spill into the next one.
+            t = min(t, targetEnd.addingTimeInterval(-0.001))
             let cur = sim[ev.entity] ?? 0
             if cur == ev.state { continue }
             sim[ev.entity] = ev.state
@@ -185,11 +214,13 @@ enum Resampler {
         vacationStart: Date,
         vacationEnd: Date,
         options: ResamplerOptions = .init()
-    ) -> [ScheduleEvent] {
+    ) throws -> [ScheduleEvent] {
+        guard vacationEnd > vacationStart, (1...1440).contains(options.blocks), options.jitterMinutes >= 0 else {
+            throw ResamplerError.invalidOptions
+        }
         let (trans, entities) = transitions(from: rows)
         let candidates = candidateDates(transitions: trans)
-        precondition(!candidates.isEmpty, "no historical days available")
-        precondition(vacationEnd > vacationStart)
+        guard !candidates.isEmpty else { throw ResamplerError.noHistory }
 
         let cal = pacificCalendar
         var targetDates: [Date] = []
@@ -211,10 +242,10 @@ enum Resampler {
             for b in 0..<options.blocks {
                 let donor = pickDonor(target: target, candidates: candidates, rng: &rng)
                 let events = replayBlock(
-                    targetStart: target.addingTimeInterval(offsets[b]),
-                    targetEnd: target.addingTimeInterval(offsets[b + 1]),
-                    donorStart: donor.addingTimeInterval(offsets[b]),
-                    donorEnd: donor.addingTimeInterval(offsets[b + 1]),
+                    targetStart: boundary(day: target, offset: offsets[b]),
+                    targetEnd: min(vacationEnd, boundary(day: target, offset: offsets[b + 1])),
+                    donorStart: boundary(day: donor, offset: offsets[b]),
+                    donorEnd: boundary(day: donor, offset: offsets[b + 1]),
                     transitions: trans,
                     entities: entities,
                     sim: &sim,
@@ -226,24 +257,20 @@ enum Resampler {
             }
         }
 
-        // All lights off at end - 1s.
         let endMarker = vacationEnd.addingTimeInterval(-1)
-        for e in entities where (sim[e] ?? 0) == 1 {
-            raw.append(ScheduleEvent(time: endMarker, entityId: e, action: "turn_off"))
-            sim[e] = 0
-        }
-
+        raw = raw.filter { $0.time >= vacationStart && $0.time < endMarker }
         raw.sort { $0.time < $1.time }
 
-        // Final dedup pass — jitter can reorder events.
         var finalState: [String: Int] = [:]
-        for e in entities { finalState[e] = 0 }
         var deduped: [ScheduleEvent] = []
         for ev in raw {
             let new = ev.action == "turn_on" ? 1 : 0
             if (finalState[ev.entityId] ?? 0) == new { continue }
             finalState[ev.entityId] = new
             deduped.append(ev)
+        }
+        for e in entities where finalState[e] == 1 {
+            deduped.append(ScheduleEvent(time: endMarker, entityId: e, action: "turn_off"))
         }
 
         // Map short -> full HA ids.
