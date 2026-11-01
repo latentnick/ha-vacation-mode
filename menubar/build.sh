@@ -35,6 +35,11 @@ cp -R "$STAGE/node_modules" "$SWITCH_DST/node_modules"
 # --- Bundle a pinned Node 24 LTS runtime (per build arch) ---
 scripts/vendor-node.sh "$RES/node"
 
+# Dependency-free LEAP helper. Never bundle prototype credentials or logs.
+mkdir -p "$RES/lutron"
+cp ../lutron/{app-helper.js,protocol.js,security.js,control.js,pairing.js,monitor.js,package.json} "$RES/lutron/"
+cp -R ../lutron/assets "$RES/lutron/assets"
+
 # --- Code signing ---
 # The Keychain item that holds our credentials carries a per-app ACL bound to
 # the app's *designated requirement*. A Developer ID Application identity has a

@@ -29,11 +29,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var nightly: NightlyScheduler!
     private var executor: ScheduleExecutor!
     private var switchDaemon: SwitchDaemon!
+    private var recorder: LutronRecorder!
     private var cancellable: AnyCancellable?
     private var configWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         watcher = StateWatcher()
+        recorder = LutronRecorder(watcher: watcher)
+        recorder.start(config: AppConfig.load())
         scheduleStatus = ScheduleStatus()
         executor = ScheduleExecutor(watcher: watcher, configProvider: { AppConfig.load() })
         switchDaemon = SwitchDaemon()
@@ -53,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 .environmentObject(scheduleStatus)
                 .environmentObject(executor)
                 .environmentObject(switchDaemon)
+                .environmentObject(HistoryStatus.shared)
         )
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -80,6 +84,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // from landing on the unattended 4 AM nightly run and failing.
             Task { [weak self] in
                 guard let self else { return }
+                if AppConfig.load().usesLocalHistory {
+                    try? await HistoryMigration.run(config: AppConfig.load(), onlyIfNeeded: true)
+                }
                 await ScheduleGenerator.runOnce(config: AppConfig.load(), status: self.scheduleStatus)
             }
         }
@@ -88,6 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        recorder?.stop()
         switchDaemon?.stop()
     }
 
@@ -136,9 +144,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         let view = ConfigWindow(onSaved: { [weak self] in
+            self?.recorder.start(config: AppConfig.load())
             self?.nightly.start()
             Task { [weak self] in
                 guard let self else { return }
+                if AppConfig.load().usesLocalHistory {
+                    try? await HistoryMigration.run(config: AppConfig.load(), onlyIfNeeded: true)
+                }
                 await ScheduleGenerator.runOnce(config: AppConfig.load(), status: self.scheduleStatus)
             }
         })
@@ -146,7 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let win = NSWindow(contentViewController: host)
         win.title = "Lights Menubar"
         win.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-        win.setContentSize(NSSize(width: 520, height: 640))
+        win.setContentSize(NSSize(width: 560, height: 760))
         win.center()
         win.isReleasedWhenClosed = false
         configWindow = win

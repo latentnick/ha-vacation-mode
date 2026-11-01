@@ -164,10 +164,16 @@ final class ScheduleExecutor: ObservableObject {
         t.resume()
     }
 
-    // MARK: - HA call
+    // MARK: - Light control
 
     private func send(_ ev: ScheduledEvent) async throws {
         let cfg = configProvider()
+        if let lutron = cfg.lutron {
+            let zone = try lutron.zone(for: ev.entity_id)
+            try await LutronClient.saved(host: lutron.host).set(zone: zone, action: ev.action)
+            log.info("Verified Lutron \(ev.action, privacy: .public) \(ev.entity_id, privacy: .public)")
+            return
+        }
         guard let token = KeychainStore.get(account: AppConfig.haTokenAccount),
               let baseURL = URL(string: cfg.ha.url) else {
             log.error("Missing HA url/token; cannot fire event")

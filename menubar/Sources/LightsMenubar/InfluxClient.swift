@@ -66,6 +66,9 @@ struct InfluxClient {
               let results = obj["results"] as? [[String: Any]] else { return [] }
         var rows: [[Any]] = []
         for result in results {
+            if let error = result["error"] as? String {
+                throw LutronError("Influx query failed: \(error)")
+            }
             guard let series = result["series"] as? [[String: Any]] else { continue }
             for s in series {
                 if let values = s["values"] as? [[Any]] {

@@ -30,57 +30,35 @@ enum ScheduleGenerator {
     }
 
     private static func generate(config: AppConfig, status: ScheduleStatus) async {
-        guard !config.ha.url.isEmpty, !config.influx.host.isEmpty, !config.entities.isEmpty,
-              let baseURL = URL(string: config.ha.url) else {
-            await MainActor.run { status.lastError = "Configuration incomplete" }
+        guard !config.entities.isEmpty else {
+            await MainActor.run { status.lastError = "Select lights in Settings" }
             return
         }
-
-        // Read credentials explicitly so a Keychain *access* failure (e.g. the
-        // ACL no longer matches this build's signature) surfaces as a clear
-        // error, rather than being mistaken for "not configured" or silently
-        // turning into an empty password that 401s against InfluxDB.
-        let token: String
-        let influxPassword: String
         do {
-            guard let t = try KeychainStore.read(account: AppConfig.haTokenAccount) else {
-                await MainActor.run { status.lastError = "Configuration incomplete (no HA token saved)" }
-                return
-            }
-            token = t
-            // A missing Influx password is legitimate (some setups have none);
-            // only a read *error* throws and is handled below.
-            influxPassword = try KeychainStore.read(account: AppConfig.influxPasswordAccount) ?? ""
-        } catch {
-            log.error("Keychain read failed: \(String(describing: error), privacy: .public)")
-            await MainActor.run {
-                status.lastError = "Couldn't read credentials from Keychain (\(error)). If you just rebuilt the app, open Configure and re-save the password to re-authorize access."
-            }
-            return
-        }
-
-        do {
-            // Map full HA entity ids -> short InfluxDB names.
-            var entityMap: [String: String] = [:]
-            var shortNames: [String] = []
-            for full in config.entities {
-                let short = full.split(separator: ".", maxSplits: 1).last.map(String.init) ?? full
-                entityMap[short] = full
-                shortNames.append(short)
-            }
-
-            let influx = InfluxClient(
-                host: config.influx.host, port: config.influx.port,
-                user: config.influx.user, password: influxPassword,
-                database: config.influx.database
-            )
-            _ = baseURL // baseURL only used for HA service calls; not needed here
-            _ = token
-
             let since = Calendar.current.date(byAdding: .day, value: -config.schedule.historyDays, to: Date())!
-            log.info("Fetching InfluxDB history for \(shortNames.count, privacy: .public) entities since \(since, privacy: .public)")
-            let rows = try await influx.fetchStateHistory(shortEntityNames: shortNames, since: since)
-            log.info("Fetched \(rows.count, privacy: .public) raw rows")
+            let rows: [RawStateRow]
+            let entityMap: [String: String]
+            let donorDates: [Date]?
+            if config.usesLocalHistory {
+                let training = try await MainActor.run {
+                    try HistoryStore().training(entities: config.entities, since: since)
+                }
+                guard !training.days.isEmpty else {
+                    throw LutronError("No complete local-history days yet. Import existing history in Settings or leave the app recording for a full day.")
+                }
+                rows = training.rows
+                entityMap = Dictionary(uniqueKeysWithValues: config.entities.map { ($0, $0) })
+                donorDates = training.days
+            } else {
+                let password = try KeychainStore.read(account: AppConfig.influxPasswordAccount) ?? ""
+                let names = config.entities.map { $0.split(separator: ".", maxSplits: 1).last.map(String.init) ?? $0 }
+                guard Set(names).count == names.count else { throw LutronError("Ambiguous history entity names") }
+                entityMap = Dictionary(uniqueKeysWithValues: zip(names, config.entities))
+                rows = try await InfluxClient(host: config.influx.host, port: config.influx.port,
+                    user: config.influx.user, password: password, database: config.influx.database)
+                    .fetchStateHistory(shortEntityNames: names, since: since)
+                donorDates = nil
+            }
 
             // Vacation window: today (Pacific midnight) .. today + N days.
             var cal = Calendar(identifier: .gregorian)
@@ -96,7 +74,8 @@ enum ScheduleGenerator {
                 options: ResamplerOptions(
                     blocks: config.schedule.blocks,
                     jitterMinutes: config.schedule.jitterMinutes
-                )
+                ),
+                donorDates: donorDates
             )
 
             try FileManager.default.createDirectory(at: AppConfig.directoryURL, withIntermediateDirectories: true)

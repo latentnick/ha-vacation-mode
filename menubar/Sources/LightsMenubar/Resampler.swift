@@ -1,6 +1,6 @@
 import Foundation
 
-struct RawStateRow {
+struct RawStateRow: Sendable {
     let time: Date
     let entity: String
     let state: Int
@@ -213,13 +213,14 @@ enum Resampler {
         entityMap: [String: String],
         vacationStart: Date,
         vacationEnd: Date,
-        options: ResamplerOptions = .init()
+        options: ResamplerOptions = .init(),
+        donorDates: [Date]? = nil
     ) throws -> [ScheduleEvent] {
         guard vacationEnd > vacationStart, (1...1440).contains(options.blocks), options.jitterMinutes >= 0 else {
             throw ResamplerError.invalidOptions
         }
         let (trans, entities) = transitions(from: rows)
-        let candidates = candidateDates(transitions: trans)
+        let candidates = donorDates ?? candidateDates(transitions: trans)
         guard !candidates.isEmpty else { throw ResamplerError.noHistory }
 
         let cal = pacificCalendar

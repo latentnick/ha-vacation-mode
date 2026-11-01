@@ -5,6 +5,7 @@ struct ContentView: View {
     @EnvironmentObject var schedule: ScheduleStatus
     @EnvironmentObject var executor: ScheduleExecutor
     @EnvironmentObject var switchDaemon: SwitchDaemon
+    @EnvironmentObject var history: HistoryStatus
     @Environment(\.colorScheme) private var colorScheme
     @State private var showsDetails = false
 
@@ -196,6 +197,13 @@ struct ContentView: View {
                 } else { Text("Not generated yet") }
             }
             detail("Executor", value: executor.isActive ? "Active" : "Inactive")
+            detail("Light control", value: AppConfig.load().lutron == nil ? "Home Assistant" : "Lutron (local)")
+            if AppConfig.load().lutron != nil {
+                detail("History recorder", value: history.recording ? "Recording locally" : "Waiting for connection")
+                if let last = history.lastRecorded {
+                    HStack { Text("Last observation"); Spacer(); Text(last, style: .relative) }
+                }
+            }
             detail("HomeKit bridge", value: bridgeStatus)
             HStack {
                 Text("State received")
@@ -228,6 +236,8 @@ struct ContentView: View {
     }
 
     private var issue: String? {
+        if let error = history.monitorError { return "History recorder: \(error)" }
+        if let error = history.importError, AppConfig.load().usesLocalHistory { return "History import: \(error)" }
         if let error = executor.lastError { return "Lighting: \(error)" }
         if let error = schedule.lastError { return "Schedule: \(error)" }
         switch switchDaemon.state {
