@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Accessory, Characteristic, CharacteristicEventTypes, HAPStorage, Service, uuid } from "hap-nodejs";
+import { Accessory, AccessoryEventTypes, Characteristic, CharacteristicEventTypes, HAPStorage, Service, uuid } from "hap-nodejs";
 
 const APP_DIR = path.join(os.homedir(), "Library", "Application Support", "lights-virtual-switch");
 const PAIRING_DIR = path.join(APP_DIR, "data"); // HAP credentials + pairing keys
@@ -91,6 +91,13 @@ switchService
 
 accessory.addService(switchService);
 
+accessory.on(AccessoryEventTypes.LISTENING, (port) => {
+  log(`Virtual Switch listening on port ${port}`);
+});
+accessory.on(AccessoryEventTypes.ADVERTISED, () => {
+  log("Virtual Switch advertised on HomeKit");
+});
+
 accessory.publish({
   username: credentials.username,
   pincode: credentials.pincode,
@@ -98,9 +105,25 @@ accessory.publish({
   category: 8, // SWITCH
 });
 
-log(`Virtual Switch published — pair it in Home app with pin ${credentials.pincode}`);
-
-process.on("SIGINT", () => {
+// A supervised daemon must not outlive the app and block its next launch.
+let shuttingDown = false;
+async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
   log("Shutting down");
-  process.exit(0);
-});
+  const timeout = setTimeout(() => process.exit(1), 1500);
+  timeout.unref();
+  try {
+    await accessory.unpublish();
+    process.exit(0);
+  } catch (error) {
+    console.error(error);
+    process.exit(1);
+  }
+}
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
+if (process.env.LIGHTS_SUPERVISED === "1") {
+  process.stdin.on("end", shutdown);
+  process.stdin.resume();
+}

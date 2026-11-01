@@ -112,6 +112,11 @@ final class SwitchDaemon: ObservableObject {
         proc.executableURL = paths.node
         proc.arguments = [paths.script.path]
         proc.currentDirectoryURL = paths.workingDir
+        // Closing the parent end (including on an app crash) tells Node to exit.
+        proc.standardInput = Pipe()
+        var environment = ProcessInfo.processInfo.environment
+        environment["LIGHTS_SUPERVISED"] = "1"
+        proc.environment = environment
 
         // Capture stdout/stderr as a safety net for crashes before index.js opens its log.
         if let handle = openLogHandle() {
