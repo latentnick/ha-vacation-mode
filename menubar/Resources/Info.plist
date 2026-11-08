@@ -20,5 +20,11 @@
     <true/>
     <key>LSMinimumSystemVersion</key>
     <string>26.0</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Lights connects to your Lutron hub to record and control lights, and publishes an away-mode switch in Apple Home.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_hap._tcp</string>
+    </array>
 </dict>
 </plist>

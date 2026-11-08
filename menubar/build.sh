@@ -2,7 +2,12 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-swift build -c release
+# Embed the app identity in the SwiftPM executable as well as the bundle.
+# Local-network privacy must identify the responsible app when its Node helper
+# connects to the hub, even when resolving the executable outside its bundle.
+swift build -c release \
+  -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist \
+  -Xlinker "$PWD/Resources/Info.plist"
 
 # Assemble and sign the bundle in a local (non-synced) temp dir. If the repo
 # lives under iCloud/file-provider sync, that sync continuously stamps
