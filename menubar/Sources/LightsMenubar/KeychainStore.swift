@@ -43,8 +43,7 @@ enum KeychainStore {
     /// the per-app ACL no longer matches this build's code signature, so the OS
     /// would prompt for access and that fails when running unattended. Callers
     /// must distinguish this from "no item" so a Keychain-access failure can be
-    /// surfaced as a clear error instead of silently degrading (e.g. an empty
-    /// password that then 401s against InfluxDB).
+    /// surfaced as a clear error instead of silently degrading.
     static func read(account: String) throws -> String? {
         if let cached = cache.withLock({ $0[account] }) {
             return cached

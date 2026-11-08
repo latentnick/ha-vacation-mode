@@ -164,34 +164,10 @@ final class ScheduleExecutor: ObservableObject {
 
     private func send(_ ev: ScheduledEvent) async throws {
         let cfg = configProvider()
-        if let lutron = cfg.lutron {
-            let zone = try lutron.zone(for: ev.entity_id)
-            try await LutronClient.saved(host: lutron.host).set(zone: zone, action: ev.action)
-            log.info("Verified Lutron \(ev.action, privacy: .public) \(ev.entity_id, privacy: .public)")
-            return
-        }
-        guard let token = KeychainStore.get(account: AppConfig.haTokenAccount),
-              let baseURL = URL(string: cfg.ha.url) else {
-            log.error("Missing HA url/token; cannot fire event")
-            throw NSError(domain: "ScheduleExecutor", code: -1,
-                          userInfo: [NSLocalizedDescriptionKey: "Missing HA url or token"])
-        }
-        let domain = ev.entity_id.split(separator: ".").first.map(String.init) ?? "switch"
-        let url = baseURL.appendingPathComponent("api/services/\(domain)/\(ev.action)")
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: ["entity_id": ev.entity_id])
-        req.timeoutInterval = 10
-
-        let (_, resp) = try await URLSession.shared.data(for: req)
-        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
-            throw NSError(domain: "ScheduleExecutor", code: code,
-                          userInfo: [NSLocalizedDescriptionKey: "HA HTTP \(code)"])
-        }
-        log.info("Fired \(ev.action, privacy: .public) \(ev.entity_id, privacy: .public)")
+        guard let lutron = cfg.lutron else { throw LutronError("Configure a Lutron hub before controlling lights") }
+        let zone = try lutron.zone(for: ev.entity_id)
+        try await LutronClient.saved(host: lutron.host).set(zone: zone, action: ev.action)
+        log.info("Verified Lutron \(ev.action, privacy: .public) \(ev.entity_id, privacy: .public)")
     }
 
     // MARK: - Schedule file watching

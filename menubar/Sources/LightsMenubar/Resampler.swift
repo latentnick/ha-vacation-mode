@@ -207,7 +207,7 @@ enum Resampler {
     }
 
     /// Generate a vacation schedule. `vacationStart` and `vacationEnd` are local-midnight Pacific dates.
-    /// `entityMap` maps short InfluxDB names to full HA entity IDs.
+    /// `entityMap` maps input history names to stable schedule entity IDs.
     static func generate(
         rows: [RawStateRow],
         entityMap: [String: String],
@@ -274,7 +274,7 @@ enum Resampler {
             deduped.append(ScheduleEvent(time: endMarker, entityId: e, action: "turn_off"))
         }
 
-        // Map short -> full HA ids.
+        // Map input names to stable schedule IDs.
         return deduped.map { ev in
             ScheduleEvent(time: ev.time, entityId: entityMap[ev.entityId] ?? ev.entityId, action: ev.action)
         }

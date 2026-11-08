@@ -77,16 +77,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         if AppConfig.load().isComplete {
             nightly.start()
-            // Also generate once at launch. The Keychain item's ACL is bound to
-            // the app's code signature, so any rebuild (or an unstable signing
-            // identity) makes the next read prompt for access. Forcing a read
-            // now — while the user is present to approve it — keeps that prompt
-            // from landing on the unattended 4 AM nightly run and failing.
+            // Generate from local history at launch.
             Task { [weak self] in
                 guard let self else { return }
-                if AppConfig.load().usesLocalHistory {
-                    try? await HistoryMigration.run(config: AppConfig.load(), onlyIfNeeded: true)
-                }
                 await ScheduleGenerator.runOnce(config: AppConfig.load(), status: self.scheduleStatus)
             }
         }
@@ -148,9 +141,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.nightly.start()
             Task { [weak self] in
                 guard let self else { return }
-                if AppConfig.load().usesLocalHistory {
-                    try? await HistoryMigration.run(config: AppConfig.load(), onlyIfNeeded: true)
-                }
                 await ScheduleGenerator.runOnce(config: AppConfig.load(), status: self.scheduleStatus)
             }
         })

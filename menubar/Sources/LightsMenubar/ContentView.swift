@@ -197,7 +197,7 @@ struct ContentView: View {
                 } else { Text("Not generated yet") }
             }
             detail("Executor", value: executor.isActive ? "Active" : "Inactive")
-            detail("Light control", value: AppConfig.load().lutron == nil ? "Home Assistant" : "Lutron (local)")
+            detail("Light control", value: "Lutron (local)")
             if AppConfig.load().lutron != nil {
                 detail("History recorder", value: history.recording ? "Recording locally" : "Waiting for connection")
                 if let last = history.lastRecorded {
@@ -237,7 +237,6 @@ struct ContentView: View {
 
     private var issue: String? {
         if let error = history.monitorError { return "History recorder: \(error)" }
-        if let error = history.importError, AppConfig.load().usesLocalHistory { return "History import: \(error)" }
         if let error = executor.lastError { return "Lighting: \(error)" }
         if let error = schedule.lastError { return "Schedule: \(error)" }
         switch switchDaemon.state {

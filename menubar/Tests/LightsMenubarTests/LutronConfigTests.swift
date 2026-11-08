@@ -2,21 +2,12 @@ import XCTest
 @testable import LightsMenubar
 
 final class LutronConfigTests: XCTestCase {
-    func testLegacyConfigurationKeepsHAAndExistingHistoryIDs() throws {
-        let data = Data(#"{"ha":{"url":"http://ha:8123"},"influx":{"host":"ha","port":8086,"user":"ha","database":"ha"},"entities":["switch.office_main_lights"],"schedule":{"vacationDays":10,"blocks":2,"jitterMinutes":10,"historyDays":183}}"#.utf8)
-        let config = try JSONDecoder().decode(AppConfig.self, from: data)
-        XCTAssertNil(config.lutron)
-        XCTAssertFalse(config.usesLocalHistory)
-        XCTAssertEqual(config.entities, ["switch.office_main_lights"])
-    }
-
     func testLutronConfigRoundTripsWithoutChangingScheduleIDs() throws {
         var config = AppConfig()
         config.entities = ["switch.office_main_lights"]
         config.lutron = .init(host: "hub.local", zones: ["switch.office_main_lights": "/zone/2"])
         let decoded = try JSONDecoder().decode(AppConfig.self, from: JSONEncoder().encode(config))
         XCTAssertEqual(decoded, config)
-        XCTAssertTrue(decoded.usesLocalHistory)
         XCTAssertEqual(try decoded.lutron?.zone(for: config.entities[0]), "/zone/2")
     }
 

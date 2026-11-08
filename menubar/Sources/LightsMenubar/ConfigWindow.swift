@@ -4,16 +4,12 @@ import AppKit
 @MainActor
 final class ConfigViewModel: ObservableObject {
     @Published var config: AppConfig
-    @Published var haToken: String
-    @Published var influxPassword: String
-    @Published var entities: [HAEntity] = []
+    @Published var entities: [LightEntity] = []
     @Published var selected: Set<String> = []
     @Published var statusMessage: String = ""
     @Published var loading: Bool = false
-    @Published var useLutron: Bool
     @Published var lutron: AppConfig.Lutron
     @Published var lutronDevices: [LutronDevice] = []
-    @Published var localHistory: Bool
     private var importedIdentity: LutronIdentity?
     @Published var pairing = false
     @Published var pairingMessage = ""
@@ -22,12 +18,8 @@ final class ConfigViewModel: ObservableObject {
     init() {
         let cfg = AppConfig.load()
         self.config = cfg
-        self.haToken = KeychainStore.get(account: AppConfig.haTokenAccount) ?? ""
-        self.influxPassword = KeychainStore.get(account: AppConfig.influxPasswordAccount) ?? ""
         self.selected = Set(cfg.entities)
-        self.useLutron = cfg.lutron != nil
         self.lutron = cfg.lutron ?? AppConfig.Lutron()
-        self.localHistory = cfg.usesLocalHistory
     }
 
     private func lutronClient() throws -> LutronClient {
@@ -98,70 +90,43 @@ final class ConfigViewModel: ObservableObject {
     }
 
     func loadEntities() {
-        if useLutron {
-            lutronDevices = []
-            loading = true
-            statusMessage = "Verifying pairing and discovering switches…"
-            Task {
-                defer { self.loading = false }
-                do {
-                    let result = try await lutronClient().discover()
-                    self.lutronDevices = result
-                    var discovered: [HAEntity] = []
-                    for device in result {
-                        let short = device.name.lowercased().replacingOccurrences(of: #"[^a-z0-9]+"#, with: "_", options: .regularExpression)
-                            .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
-                        let inferred = "switch.\(short)"
-                        let id = self.lutron.zones.first(where: { $0.value == device.zone })?.key ?? inferred
-                        discovered.append(HAEntity(entityId: id, friendlyName: device.name))
-                        // A visible suggestion only; Save validates all selected mappings.
-                        if self.lutron.zones[id] == nil { self.lutron.zones[id] = device.zone }
-                    }
-                    let discoveredIDs = Set(discovered.map(\.entityId))
-                    discovered += self.selected.subtracting(discoveredIDs).map { HAEntity(entityId: $0, friendlyName: $0) }
-                    self.entities = discovered.sorted { $0.entityId < $1.entityId }
-                    self.statusMessage = "Verified \(result.count) switches. Review the zone mappings, then Save."
-                } catch { self.statusMessage = "Lutron: \(error.localizedDescription)" }
-            }
-            return
-        }
-        guard let url = URL(string: config.ha.url), !haToken.isEmpty else {
-            statusMessage = "Set HA URL and token first"
-            return
-        }
+        lutronDevices = []
         loading = true
-        statusMessage = "Loading entities…"
-        let client = HAClient(baseURL: url, token: haToken)
+        statusMessage = "Verifying pairing and discovering switches…"
         Task {
+            defer { self.loading = false }
             do {
-                let result = try await client.fetchEntities()
-                self.entities = result
-                self.statusMessage = "Found \(result.count) lights/switches"
-            } catch {
-                self.statusMessage = "Error: \(error.localizedDescription)"
-            }
-            self.loading = false
+                let result = try await lutronClient().discover()
+                self.lutronDevices = result
+                var discovered: [LightEntity] = []
+                for device in result {
+                    let short = device.name.lowercased().replacingOccurrences(of: #"[^a-z0-9]+"#, with: "_", options: .regularExpression)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+                    let inferred = "switch.\(short)"
+                    let id = self.lutron.zones.first(where: { $0.value == device.zone })?.key ?? inferred
+                    discovered.append(LightEntity(entityId: id, friendlyName: device.name))
+                    // A visible suggestion only; Save validates all selected mappings.
+                    if self.lutron.zones[id] == nil { self.lutron.zones[id] = device.zone }
+                }
+                let discoveredIDs = Set(discovered.map(\.entityId))
+                discovered += self.selected.subtracting(discoveredIDs).map { LightEntity(entityId: $0, friendlyName: $0) }
+                self.entities = discovered.sorted { $0.entityId < $1.entityId }
+                self.statusMessage = "Verified \(result.count) switches. Review the zone mappings, then Save."
+            } catch { self.statusMessage = "Lutron: \(error.localizedDescription)" }
         }
     }
 
     func save() throws {
-        config.localHistory = useLutron && localHistory
-        if useLutron {
-            try lutron.validate(entities: Array(selected))
-            guard !lutronDevices.isEmpty,
-                  selected.allSatisfy({ id in lutronDevices.contains { $0.zone == lutron.zones[id] } }) else {
-                throw LutronError("Discover switches and verify each selected light's zone before saving")
-            }
-            if let importedIdentity {
-                let data = try JSONEncoder().encode(importedIdentity)
-                try KeychainStore.set(String(decoding: data, as: UTF8.self), account: AppConfig.lutronIdentityAccount)
-            }
-            config.lutron = lutron
-        } else {
-            config.lutron = nil
-            try KeychainStore.set(haToken, account: AppConfig.haTokenAccount)
+        try lutron.validate(entities: Array(selected))
+        guard !lutronDevices.isEmpty,
+              selected.allSatisfy({ id in lutronDevices.contains { $0.zone == lutron.zones[id] } }) else {
+            throw LutronError("Discover switches and verify each selected light's zone before saving")
         }
-        try KeychainStore.set(influxPassword, account: AppConfig.influxPasswordAccount)
+        if let importedIdentity {
+            let data = try JSONEncoder().encode(importedIdentity)
+            try KeychainStore.set(String(decoding: data, as: UTF8.self), account: AppConfig.lutronIdentityAccount)
+        }
+        config.lutron = lutron
         config.entities = Array(selected).sorted()
         try config.save()
         statusMessage = "Saved."
@@ -170,7 +135,6 @@ final class ConfigViewModel: ObservableObject {
 
 struct ConfigWindow: View {
     @StateObject var vm = ConfigViewModel()
-    @ObservedObject var history = HistoryStatus.shared
     var onSaved: (() -> Void)?
 
     var body: some View {
@@ -178,85 +142,32 @@ struct ConfigWindow: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Lights Menubar — Configuration").font(.title2).bold()
 
-            Toggle("Control lights directly through Lutron", isOn: $vm.useLutron)
-                .disabled(vm.loading)
-                .onChange(of: vm.useLutron) { _, enabled in if enabled { vm.localHistory = true } }
-
-            if vm.useLutron {
-                GroupBox("Lutron hub") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        TextField("Hub IP address or hostname", text: $vm.lutron.host)
-                            .disabled(vm.loading)
-                            .onChange(of: vm.lutron.host) { _, _ in vm.lutronDevices = [] }
-                        HStack {
-                            Button(vm.pairing ? "Pairing…" : "Pair with hub") { vm.pairWithHub() }
-                                .disabled(vm.loading || vm.lutron.host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                            if vm.pairing {
-                                ProgressView().controlSize(.small)
-                                Button("Cancel") { vm.cancelPairing() }
-                            }
-                            Menu("More") {
-                                Button("Import existing pairing…") { vm.importPairing() }
-                            }.disabled(vm.loading)
+            GroupBox("Lutron hub") {
+                VStack(alignment: .leading, spacing: 8) {
+                    TextField("Hub IP address or hostname", text: $vm.lutron.host)
+                        .disabled(vm.loading)
+                        .onChange(of: vm.lutron.host) { _, _ in vm.lutronDevices = [] }
+                    HStack {
+                        Button(vm.pairing ? "Pairing…" : "Pair with hub") { vm.pairWithHub() }
+                            .disabled(vm.loading || vm.lutron.host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        if vm.pairing {
+                            ProgressView().controlSize(.small)
+                            Button("Cancel") { vm.cancelPairing() }
                         }
-                        if !vm.pairingMessage.isEmpty {
-                            Text(vm.pairingMessage).font(.callout).fixedSize(horizontal: false, vertical: true)
-                        }
-                        Text("Pairing is stored in Keychain.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }.padding(8)
-                }
-            } else {
-
-            GroupBox("Home Assistant") {
-                Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
-                    GridRow {
-                        Text("URL")
-                        TextField("http://homeassistant.local:8123", text: $vm.config.ha.url)
+                        Menu("More") {
+                            Button("Import existing pairing…") { vm.importPairing() }
+                        }.disabled(vm.loading)
                     }
-                    GridRow {
-                        Text("Token")
-                        SecureField("Long-lived access token", text: $vm.haToken)
+                    if !vm.pairingMessage.isEmpty {
+                        Text(vm.pairingMessage).font(.callout).fixedSize(horizontal: false, vertical: true)
                     }
+                    Text("Pairing is stored in Keychain.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }.padding(8)
             }
-            }
-
-            if vm.useLutron {
-                GroupBox("Usage history") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Toggle("Use local history for schedules", isOn: $vm.localHistory)
-                        Text("The app records switch activity while it is running. Incomplete days and away-mode playback are excluded from new training days.")
-                            .font(.caption).foregroundStyle(.secondary)
-                        if !history.importMessage.isEmpty { Text(history.importMessage).font(.caption) }
-                        Button(history.importing ? "Importing…" : "Import existing InfluxDB history") {
-                            var config = vm.config
-                            config.entities = Array(vm.selected).sorted()
-                            Task { try? await HistoryMigration.run(config: config) }
-                        }.disabled(history.importing || vm.loading)
-                        if let error = history.importError { Text(error).font(.caption).foregroundStyle(.red) }
-                    }.padding(8)
-                }
-            }
-
-            DisclosureGroup(vm.useLutron && vm.localHistory ? "InfluxDB import settings" : "InfluxDB settings") {
-                Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
-                    GridRow {
-                        Text("Host"); TextField("homeassistant.local", text: $vm.config.influx.host)
-                    }
-                    GridRow {
-                        Text("Port"); TextField("8086", value: $vm.config.influx.port, format: .number.grouping(.never))
-                    }
-                    GridRow {
-                        Text("Database"); TextField("homeassistant", text: $vm.config.influx.database)
-                    }
-                    GridRow {
-                        Text("User"); TextField("homeassistant", text: $vm.config.influx.user)
-                    }
-                    GridRow {
-                        Text("Password"); SecureField("", text: $vm.influxPassword)
-                    }
-                }.padding(8)
+            GroupBox("Usage history") {
+                Text("Switch activity is recorded locally while the app runs. Only complete days recorded outside away mode are used for schedules.")
+                    .font(.caption).foregroundStyle(.secondary).padding(8)
             }
 
             HStack {
@@ -266,7 +177,7 @@ struct ConfigWindow: View {
 
             GroupBox("Lights & switches") {
                 List {
-                    ForEach(vm.entities.isEmpty ? Array(vm.selected).sorted().map { HAEntity(entityId: $0, friendlyName: $0) } : vm.entities) { entity in
+                    ForEach(vm.entities.isEmpty ? Array(vm.selected).sorted().map { LightEntity(entityId: $0, friendlyName: $0) } : vm.entities) { entity in
                         Toggle(isOn: Binding(
                             get: { vm.selected.contains(entity.entityId) },
                             set: { isOn in
@@ -279,7 +190,7 @@ struct ConfigWindow: View {
                                 Text(entity.entityId).font(.caption).foregroundStyle(.secondary)
                             }
                         }
-                        if vm.useLutron && vm.selected.contains(entity.entityId) {
+                        if vm.selected.contains(entity.entityId) {
                             Picker("Lutron switch", selection: Binding(
                                 get: { vm.lutron.zones[entity.entityId] ?? "" },
                                 set: { vm.lutron.zones[entity.entityId] = $0 }

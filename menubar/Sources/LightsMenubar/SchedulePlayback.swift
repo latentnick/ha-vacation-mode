@@ -49,7 +49,7 @@ final class SchedulePlayback {
                 confirmed[event.entity_id] = event.action
             } catch {
                 guard !Task.isCancelled, generation == currentGeneration else { break }
-                // A transport failure may occur after HA applied the request. Its
+                // A transport failure may occur after the hub applied the request. Its
                 // state is unknown, so even a later opposite action must be sent.
                 confirmed.removeValue(forKey: event.entity_id)
                 failed.insert(event.entity_id)

@@ -36,29 +36,15 @@ enum ScheduleGenerator {
         }
         do {
             let since = Calendar.current.date(byAdding: .day, value: -config.schedule.historyDays, to: Date())!
-            let rows: [RawStateRow]
-            let entityMap: [String: String]
-            let donorDates: [Date]?
-            if config.usesLocalHistory {
-                let training = try await MainActor.run {
-                    try HistoryStore().training(entities: config.entities, since: since)
-                }
-                guard !training.days.isEmpty else {
-                    throw LutronError("No complete local-history days yet. Import existing history in Settings or leave the app recording for a full day.")
-                }
-                rows = training.rows
-                entityMap = Dictionary(uniqueKeysWithValues: config.entities.map { ($0, $0) })
-                donorDates = training.days
-            } else {
-                let password = try KeychainStore.read(account: AppConfig.influxPasswordAccount) ?? ""
-                let names = config.entities.map { $0.split(separator: ".", maxSplits: 1).last.map(String.init) ?? $0 }
-                guard Set(names).count == names.count else { throw LutronError("Ambiguous history entity names") }
-                entityMap = Dictionary(uniqueKeysWithValues: zip(names, config.entities))
-                rows = try await InfluxClient(host: config.influx.host, port: config.influx.port,
-                    user: config.influx.user, password: password, database: config.influx.database)
-                    .fetchStateHistory(shortEntityNames: names, since: since)
-                donorDates = nil
+            let training = try await MainActor.run {
+                try HistoryStore().training(entities: config.entities, since: since)
             }
+            guard !training.days.isEmpty else {
+                throw LutronError("No complete local-history days yet. Leave the app recording for a full day.")
+            }
+            let rows = training.rows
+            let entityMap = Dictionary(uniqueKeysWithValues: config.entities.map { ($0, $0) })
+            let donorDates = training.days
 
             // Vacation window: today (Pacific midnight) .. today + N days.
             var cal = Calendar(identifier: .gregorian)

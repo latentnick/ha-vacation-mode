@@ -19,15 +19,6 @@ struct AppConfig: Codable, Equatable {
             guard Set(targets).count == targets.count else { throw LutronError("Each light must map to a different Lutron zone") }
         }
     }
-    struct HA: Codable, Equatable {
-        var url: String = "http://homeassistant.local:8123"
-    }
-    struct Influx: Codable, Equatable {
-        var host: String = "homeassistant.local"
-        var port: Int = 8086
-        var user: String = "homeassistant"
-        var database: String = "homeassistant"
-    }
     struct Schedule: Codable, Equatable {
         var vacationDays: Int = 10
         var blocks: Int = 2
@@ -35,26 +26,16 @@ struct AppConfig: Codable, Equatable {
         var historyDays: Int = 183
     }
 
-    var ha: HA = HA()
     var lutron: Lutron? = nil
-    var localHistory: Bool? = nil
-    var usesLocalHistory: Bool { localHistory ?? (lutron != nil) }
-    var influx: Influx = Influx()
     var entities: [String] = []
     var schedule: Schedule = Schedule()
 
-    static let haTokenAccount = "ha_token"
     static let lutronIdentityAccount = "lutron_identity"
-    static let influxPasswordAccount = "influx_password"
 
     var isComplete: Bool {
-        if let lutron {
-            return (usesLocalHistory || !influx.host.isEmpty) && !entities.isEmpty &&
-                (try? lutron.validate(entities: entities)) != nil &&
-                KeychainStore.get(account: Self.lutronIdentityAccount) != nil
-        }
-        return !ha.url.isEmpty && !influx.host.isEmpty && !entities.isEmpty &&
-            KeychainStore.get(account: AppConfig.haTokenAccount) != nil
+        guard let lutron else { return false }
+        return !entities.isEmpty && (try? lutron.validate(entities: entities)) != nil &&
+            KeychainStore.get(account: Self.lutronIdentityAccount) != nil
     }
 
     static var directoryURL: URL {

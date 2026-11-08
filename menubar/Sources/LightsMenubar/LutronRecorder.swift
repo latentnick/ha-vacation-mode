@@ -7,9 +7,6 @@ final class HistoryStatus: ObservableObject {
     @Published var recording = false
     @Published var lastRecorded: Date?
     @Published var monitorError: String?
-    @Published var importError: String?
-    @Published var importing = false
-    @Published var importMessage = ""
 }
 
 @MainActor
@@ -46,7 +43,6 @@ final class LutronRecorder {
         do {
             try settings.validate(entities: config.entities)
             store = try HistoryStore()
-            _ = try store?.cutover()
         } catch { status.monitorError = error.localizedDescription; return }
         let mapping = Dictionary(uniqueKeysWithValues: config.entities.map { (settings.zones[$0]!, $0) })
         task = Task { [weak self] in
@@ -112,44 +108,6 @@ final class LutronRecorder {
             coverage.reset()
             status.recording = false
             status.monitorError = error.localizedDescription
-        }
-    }
-}
-
-@MainActor
-enum HistoryMigration {
-    static func run(config: AppConfig, onlyIfNeeded: Bool = false) async throws {
-        let status = HistoryStatus.shared
-        guard !status.importing else { return }
-        status.importing = true
-        status.importError = nil
-        defer { status.importing = false }
-        do {
-            let store = try HistoryStore()
-            if onlyIfNeeded, try store.imported {
-                status.importMessage = "Existing history is stored locally."
-                return
-            }
-            guard !config.entities.isEmpty else { throw LutronError("Select lights before importing history") }
-            let cutoff = try store.cutover()
-            status.importMessage = "Importing existing history…"
-            let password = try KeychainStore.read(account: AppConfig.influxPasswordAccount) ?? ""
-            let client = InfluxClient(host: config.influx.host, port: config.influx.port, user: config.influx.user, password: password, database: config.influx.database)
-            let names = config.entities.map { $0.split(separator: ".", maxSplits: 1).last.map(String.init) ?? $0 }
-            guard Set(names).count == names.count else { throw LutronError("History names are ambiguous across selected entities") }
-            let map = Dictionary(uniqueKeysWithValues: zip(names, config.entities))
-            let since = Calendar.current.date(byAdding: .day, value: -config.schedule.historyDays, to: cutoff)!
-            let rows = try await client.fetchStateHistory(shortEntityNames: names, since: since)
-            let mapped = rows.compactMap { row -> RawStateRow? in
-                guard let entity = map[row.entity] else { return nil }
-                return RawStateRow(time: row.time, entity: entity, state: row.state)
-            }
-            try store.importHistory(mapped, entities: config.entities, until: cutoff)
-            status.importMessage = "Imported existing history. Future recording is local."
-        } catch {
-            status.importError = error.localizedDescription
-            status.importMessage = "Import failed; keep the InfluxDB host available and retry."
-            throw error
         }
     }
 }

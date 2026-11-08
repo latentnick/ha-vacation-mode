@@ -60,12 +60,6 @@ final class HistoryStore {
         do { try work(); try execute("COMMIT") }
         catch { try? execute("ROLLBACK"); throw error }
     }
-    func cutover(now: Date = Date()) throws -> Date {
-        try execute("INSERT OR IGNORE INTO metadata VALUES ('cutover', ?)", [.number(now.timeIntervalSince1970)])
-        return Date(timeIntervalSince1970: try number("SELECT value FROM metadata WHERE key='cutover'")!)
-    }
-    var imported: Bool { get throws { try number("SELECT value FROM metadata WHERE key='imported'") != nil } }
-
     func record(_ row: RawStateRow) throws {
         guard row.state == 0 || row.state == 1 else { throw LutronError("Invalid light state") }
         let previous = try number("SELECT state FROM states WHERE entity=? ORDER BY time DESC LIMIT 1", [.text(row.entity)])
@@ -83,23 +77,6 @@ final class HistoryStore {
                     try execute("INSERT INTO coverage VALUES (?,?,?,?)", [.text(entity), .number(start.timeIntervalSince1970), .number(end.timeIntervalSince1970), .text(session)])
                 }
             }
-        }
-    }
-
-    func importHistory(_ rows: [RawStateRow], entities: [String], until cutoff: Date) throws {
-        let historical = rows.filter { $0.time < cutoff && entities.contains($0.entity) }
-        guard !entities.isEmpty, entities.allSatisfy({ entity in historical.contains { $0.entity == entity } }) else {
-            throw LutronError("Influx import is missing history for one or more selected lights; local history was not marked migrated")
-        }
-        try transaction {
-            for row in historical {
-                try execute("INSERT OR IGNORE INTO states VALUES (?,?,?,'influx')", [.text(row.entity), .number(row.time.timeIntervalSince1970), .integer(row.state)])
-            }
-            for entity in entities {
-                let start = historical.filter { $0.entity == entity }.map(\.time).min()!
-                try execute("INSERT INTO coverage VALUES (?,?,?,'influx') ON CONFLICT(entity,session,start) DO UPDATE SET end=MAX(end,excluded.end)", [.text(entity), .number(start.timeIntervalSince1970), .number(cutoff.timeIntervalSince1970)])
-            }
-            try execute("INSERT OR REPLACE INTO metadata VALUES ('imported', ?)", [.number(Date().timeIntervalSince1970)])
         }
     }
 

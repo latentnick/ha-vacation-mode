@@ -31,7 +31,7 @@ final class SchedulePlaybackTests: XCTestCase {
 
     func testFailedRequestRemainsPendingAndIsRetried() async {
         for error in [URLError(.networkConnectionLost) as Error,
-                      NSError(domain: "HA", code: 503)] {
+                      NSError(domain: "Lutron", code: 503)] {
             let playback = SchedulePlayback()
             playback.events = [event(0, "a", "turn_off"), event(0, "b", "turn_off")]
             let message = await playback.reconcile(now: { self.start }) { event in

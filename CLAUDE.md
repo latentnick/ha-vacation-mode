@@ -4,17 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This project makes a home look occupied while the owner is away. It fetches historical light-usage data from Home Assistant via InfluxDB, generates a realistic vacation light schedule via empirical-day resampling, and executes it via the Home Assistant REST API.
+This project makes a home look occupied while the owner is away. It records light usage directly from Lutron into SQLite, generates a realistic vacation light schedule via empirical-day resampling, and executes it through verified local LEAP calls.
 
 It is a **macOS menubar app** (SwiftUI, in `menubar/`) that does all of this natively. A bundled **Node.js virtual HomeKit switch** (`switch/`) lets the user arm/disarm the schedule from the Home app. (An earlier Python implementation of the pipeline was removed once the Swift port reached parity — see git history if you need it.)
 
 ## Architecture
 
 ### Data flow (all in `menubar/Sources/LightsMenubar/`)
-1. `InfluxClient.swift` — pulls light state history from InfluxDB into `RawStateRow`s
+1. `LutronRecorder.swift` / `HistoryStore.swift` — record local light observations and coverage into SQLite
 2. `Resampler.swift` — for each block of each vacation day, samples a real historical day (day-of-week match, weighted by seasonal proximity) and replays that donor's switch events within the block with small jitter. Produces the schedule events.
-3. `ScheduleGenerator.swift` / `NightlyScheduler.swift` — orchestrate fetch + generate; the schedule is regenerated nightly and written to `~/Library/Application Support/lights-menubar/schedule_events.json`
-4. `ScheduleExecutor.swift` — watches the virtual switch; when armed, calls the HA REST API at each event time
+3. `ScheduleGenerator.swift` / `NightlyScheduler.swift` — orchestrate local history reads + generation; the schedule is regenerated nightly and written to `~/Library/Application Support/lights-menubar/schedule_events.json`
+4. `ScheduleExecutor.swift` — watches the virtual switch; when armed, calls the Lutron LEAP API at each event time
 5. `SwitchDaemon.swift` — supervises the bundled `switch/index.js` Node process (the HomeKit accessory)
 
 ### Key files
@@ -24,9 +24,9 @@ It is a **macOS menubar app** (SwiftUI, in `menubar/`) that does all of this nat
 | `menubar/build.sh` | Builds the app and bundles the Node switch daemon + a vendored Node.js |
 | `menubar/scripts/vendor-node.sh` | Vendors a Node.js runtime for bundling |
 | `switch/index.js` | Node.js virtual HomeKit switch (`hap-nodejs`) |
-| `~/Library/Application Support/lights-menubar/config.json` | App config (HA URL, InfluxDB settings, entities, schedule knobs) |
+| `~/Library/Application Support/lights-menubar/config.json` | App config (Lutron hub, zone mappings, entities, schedule knobs) |
 | `~/Library/Application Support/lights-menubar/schedule_events.json` | Generated on/off events |
-| macOS Keychain | HA long-lived token and InfluxDB password (see `KeychainStore.swift`) |
+| macOS Keychain | Lutron pairing identity (see `KeychainStore.swift`) |
 
 ## Development Environment
 
@@ -44,27 +44,9 @@ concurrency checking is enforced: `StateWatcher` and `NightlyScheduler` are
 
 `menubar/Tests/LightsMenubarTests/` holds the unit tests. `ResamplerTests` covers the schedule generator's invariants (deterministic given a seed, events sorted, no consecutive same-state events per entity, all lights off at the end, entity-id mapping, jitter bounds) and `ResampleCLITests` covers the CLI's CSV/timestamp parsing. These replace the old approach of diffing the Swift output against the retired Python `generate_resample.py`.
 
-## Home Assistant Integration
-
-### InfluxDB (v1.8.x)
-- Add-on: `hassio-addons/addon-influxdb`
-- Uses InfluxQL (not Flux)
-- Credentials are set in the addon's Chronograf UI, not HA login credentials
-- Light states stored in the `state` measurement with `entity_id` field and `state` field (`"on"`/`"off"`)
-
-### REST API
-- Service calls: `POST /api/services/switch/turn_on` and `turn_off`
-- Auth: `Authorization: Bearer <token>` header
-- Token from: HA Profile → Security → Long-Lived Access Tokens
-
-### Entity naming
-- InfluxDB stores entities without domain prefix (e.g. `office_main_lights`)
-- HA REST API uses full entity IDs with domain (e.g. `switch.office_main_lights`)
-- The app's `entityMap` (short name → full HA entity ID) holds the mapping
-
 ## Schedule events
 
-Schedule events are `{time, entity_id, action}` objects sorted by time. `entity_id` is the full HA entity ID (e.g. `switch.office_main_lights`). `action` is `"turn_on"` or `"turn_off"`. Timestamps are US/Pacific.
+Schedule events are `{time, entity_id, action}` objects sorted by time. `entity_id` is a stable light ID (e.g. `switch.office_main_lights`). `action` is `"turn_on"` or `"turn_off"`. Timestamps are US/Pacific.
 
 ## Generator
 
