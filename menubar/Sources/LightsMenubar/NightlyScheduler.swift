@@ -4,7 +4,6 @@ import os
 @MainActor
 final class NightlyScheduler {
     private var timer: DispatchSourceTimer?
-    private let queue = DispatchQueue(label: "com.nicklee.lights-menubar.nightly")
     private let log = Logger(subsystem: "com.nicklee.lights-menubar", category: "NightlyScheduler")
     private let configProvider: () -> AppConfig
     private let status: ScheduleStatus
@@ -29,9 +28,7 @@ final class NightlyScheduler {
         let next = nextFire(after: Date())
         let delay = next.timeIntervalSinceNow
         log.info("Next schedule generation at \(next, privacy: .public) (in \(Int(delay), privacy: .public)s)")
-        let t = DispatchSource.makeTimerSource(queue: queue)
-        t.schedule(deadline: .now() + delay)
-        t.setEventHandler { [weak self] in
+        let t = MainActorTimer.schedule(at: next) { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
                 await ScheduleGenerator.runOnce(config: self.configProvider(), status: self.status)
@@ -40,7 +37,6 @@ final class NightlyScheduler {
         }
         timer?.cancel()
         timer = t
-        t.resume()
     }
 
     private func nextFire(after now: Date) -> Date {

@@ -23,7 +23,6 @@ final class ScheduleExecutor: ObservableObject {
     private var isStoppingLights = false
     private var reconcileTask: Task<Void, Never>?
     private var timer: DispatchSourceTimer?
-    private let timerQueue = DispatchQueue(label: "com.nicklee.lights-menubar.executor")
 
     private var fileSource: DispatchSourceFileSystemObject?
     private var dirSource: DispatchSourceFileSystemObject?
@@ -155,13 +154,10 @@ final class ScheduleExecutor: ObservableObject {
         if !pending { isStoppingLights = false }
         let retryAt = pending ? now.addingTimeInterval(5) : nil
         guard let deadline = [nextEvent?.time, retryAt].compactMap({ $0 }).min() else { return }
-        let t = DispatchSource.makeTimerSource(queue: timerQueue)
-        t.schedule(wallDeadline: .now() + max(0, deadline.timeIntervalSinceNow))
-        t.setEventHandler { [weak self] in
+        let t = MainActorTimer.schedule(at: deadline) { [weak self] in
             Task { @MainActor in self?.processDueEvents() }
         }
         timer = t
-        t.resume()
     }
 
     // MARK: - Light control
