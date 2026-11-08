@@ -23,7 +23,7 @@ struct AppConfig: Codable, Equatable {
         var vacationDays: Int = 10
         var blocks: Int = 2
         var jitterMinutes: Int = 10
-        var historyDays: Int = 183
+        var historyDays: Int = 365
     }
 
     var lutron: Lutron? = nil

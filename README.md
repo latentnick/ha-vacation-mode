@@ -132,7 +132,7 @@ Settings exposes the vacation window (1–30 days). The remaining generator para
 
 - **`blocks`** — split each day into N equal-width time blocks, drawing an independent donor per block. Defaults to 2 (morning/evening split), which empirically beats both whole-day replay (1 block) and finer splits.
 - **`jitterMinutes`** — random ±M-minute offset applied to each replayed event. Defaults to 10.
-- **`historyDays`** — how far back to pull donor days from. Defaults to 183 (~6 months).
+- **`historyDays`** — how far back to pull donor days from. Defaults to 365 (~1 year).
 
 For reproducible output while debugging, the headless CLI accepts a fixed seed:
 
