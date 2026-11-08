@@ -76,6 +76,11 @@ fi
 # Mach-O resource). No hardened runtime: it would block V8's JIT in the bundled
 # Node unless we also added allow-jit entitlements, and it isn't needed for ACL
 # stability — a stable identity alone is what keeps the requirement constant.
+# SwiftPM leaves a linker-signed executable with identifier "LightsMenubar".
+# It shares the bundled executable's UUID, so macOS network privacy can resolve
+# that UUID to the wrong identity after a rebuild. Sign both copies consistently.
+codesign --force --sign "$SIGN_IDENTITY" \
+  --identifier com.nicklee.lights-menubar .build/release/LightsMenubar
 codesign --force --sign "$SIGN_IDENTITY" "$RES/node/bin/node"
 codesign --force --sign "$SIGN_IDENTITY" "$APP"
 
