@@ -142,6 +142,8 @@ struct ConfigWindow: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Lights Menubar — Configuration").font(.title2).bold()
 
+            LoginItemSettings()
+
             GroupBox("Lutron hub") {
                 VStack(alignment: .leading, spacing: 8) {
                     TextField("Hub IP address or hostname", text: $vm.lutron.host)

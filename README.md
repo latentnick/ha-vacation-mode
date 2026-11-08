@@ -65,7 +65,7 @@ cd menubar
 ./build.sh
 ```
 
-This compiles the release app and bundles the HomeKit daemon, its dependencies, the Lutron helper, and a pinned Node.js runtime into `menubar/build/LightsMenubar.app`. The build signs the bundle with an available Developer ID identity, falling back to ad-hoc signing. Copy that to `/Applications` (or launch it in place) and add it to your login items so it starts on boot.
+This compiles the release app and bundles the HomeKit daemon, its dependencies, the Lutron helper, and a pinned Node.js runtime into `menubar/build/LightsMenubar.app`. The build signs the bundle with an available Developer ID identity, falling back to ad-hoc signing. Copy that to `/Applications` and launch it. In the app’s settings, enable **Launch at login** under **Startup** to open it automatically after you log in. This setting applies immediately without clicking Save. If macOS requires approval, use **Open Login Items…** to allow it in System Settings. It does not run before login.
 
 ## Configure
 
