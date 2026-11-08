@@ -1,5 +1,4 @@
 import tls from 'node:tls';
-import fs from 'node:fs';
 import { X509Certificate, createPrivateKey, createPublicKey } from 'node:crypto';
 import { once } from 'node:events';
 import { Connection } from './protocol.js';
@@ -44,15 +43,4 @@ export function validateIdentity({ ca, key, cert }) {
   const expected = createPublicKey(createPrivateKey(key)).export({ type: 'spki', format: 'der' });
   const actual = client.publicKey.export({ type: 'spki', format: 'der' });
   if (!expected.equals(actual)) throw new Error('Client certificate does not match generated private key');
-}
-
-export function loadPrivateJSON(file) {
-  const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
-  try {
-    const stat = fs.fstatSync(fd);
-    if (!stat.isFile() || (stat.mode & 0o077) !== 0 || stat.uid !== process.getuid()) {
-      throw new Error('Credentials must be an owner-only regular file (chmod 600)');
-    }
-    return JSON.parse(fs.readFileSync(fd, 'utf8'));
-  } finally { fs.closeSync(fd); }
 }

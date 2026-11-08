@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { monitor } from '../lutron/monitor.js';
+import { monitor } from '../monitor.js';
 
 test('full heartbeat retains an unsolicited update received during other zone reads', async () => {
   const connection = new EventEmitter();

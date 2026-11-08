@@ -6,7 +6,7 @@ import path from 'node:path';
 import tls from 'node:tls';
 import { once } from 'node:events';
 import { execFileSync } from 'node:child_process';
-import { connectVerified, validateIdentity, loadPrivateJSON } from '../lutron/security.js';
+import { connectVerified, validateIdentity } from '../security.js';
 
 test('real TLS verifies explicit CA, client auth, expiry and rejects rogue certificates', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lights-tls-test-'));
@@ -55,16 +55,4 @@ test('real TLS verifies explicit CA, client auth, expiry and rejects rogue certi
   await server(read('expired.pem'), async port => {
     await assert.rejects(connectVerified('127.0.0.1', port, identity), /expired/i);
   });
-});
-
-test('credential loader rejects world-readable files and symlinks', t => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lights-permission-test-'));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const file = path.join(dir, 'credentials.json');
-  fs.writeFileSync(file, '{}', { mode: 0o600 });
-  assert.deepEqual(loadPrivateJSON(file), {});
-  fs.chmodSync(file, 0o644);
-  assert.throws(() => loadPrivateJSON(file), /owner-only/);
-  fs.symlinkSync(file, path.join(dir, 'link'));
-  assert.throws(() => loadPrivateJSON(path.join(dir, 'link')));
 });

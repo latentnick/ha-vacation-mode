@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { requestCertificate } from '../lutron/pairing.js';
+import { requestCertificate } from '../pairing.js';
 
 function fake() {
   const connection = new EventEmitter();

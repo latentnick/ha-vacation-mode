@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { setAndVerify } from '../lutron/control.js';
+import { setAndVerify } from '../control.js';
 
 function fake(type = 'DivaSmartSwitch', follows = true) {
   let level = 100;

@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 
 test('failed monitor exits even while its parent keeps stdin open', async () => {
-  const child = spawn(process.execPath, [new URL('../lutron/app-helper.js', import.meta.url).pathname], { stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, [new URL('../app-helper.js', import.meta.url).pathname], { stdio: ['pipe', 'pipe', 'pipe'] });
   const timer = setTimeout(() => child.kill(), 2000);
   try {
     const exited = once(child, 'exit');

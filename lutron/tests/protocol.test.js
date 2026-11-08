@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
-import { Connection, Frames, zoneStates } from '../lutron/protocol.js';
+import { Connection, Frames, zoneStates } from '../protocol.js';
 
 test('TLS framing handles fragmented, combined and CRLF messages', () => {
   const frames = new Frames();

@@ -42,8 +42,8 @@ Configuration is saved to `~/Library/Application Support/lights-menubar/config.j
 
 ## Direct Lutron control
 
-The app supports Caséta DivaSmartSwitch devices using the same certificate-verified,
-dependency-free LEAP implementation validated in `lutron-prototype/`.
+The app supports Caséta DivaSmartSwitch devices using the certificate-verified,
+dependency-free LEAP implementation in `lutron/`.
 
 1. Open Configure and enable **Control lights directly through Lutron**.
 2. Click **Pair with hub**. When prompted, press the small button on the back of
@@ -89,7 +89,7 @@ the last observation time. No new Node dependencies were added.
 
 Developer builds can set `LIGHTS_NODE_BIN` and `LIGHTS_LUTRON_DIR` to an absolute
 Node executable and the repository's `lutron/` directory. Release builds bundle
-these automatically. Run protocol/TLS tests with `cd lutron-prototype && npm test`.
+these automatically. Run protocol/TLS tests with `cd lutron && npm test`.
 
 ## Usage
 

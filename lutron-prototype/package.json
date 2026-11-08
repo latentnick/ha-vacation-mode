@@ -1,7 +1,0 @@
-{
-  "name": "lights-lutron-prototype",
-  "private": true,
-  "type": "module",
-  "scripts": { "test": "node --test", "start": "node cli.js" },
-  "engines": { "node": ">=22" }
-}
